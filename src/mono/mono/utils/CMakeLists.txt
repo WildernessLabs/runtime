@@ -129,6 +129,7 @@ set(utils_common_sources
     mono-threads-wasm.h
     mono-threads-wasm.c
     mono-threads-sunos.c
+    mono-threads-nuttx.c
     mono-threads.h
     mono-threads-debug.h
     mono-threads-api.h

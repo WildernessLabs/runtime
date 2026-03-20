@@ -864,7 +864,7 @@ endif()
 if(HOST_WIN32)
   set(NAME_DEV_RANDOM "\"\"")
 elseif(HOST_NUTTX)
-  set(NAME_DEV_RANDOM "\"\"")
+  set(NAME_DEV_RANDOM "\"/dev/random\"")
 else()
   # FIXME:
   set(NAME_DEV_RANDOM "\"/dev/random\"")

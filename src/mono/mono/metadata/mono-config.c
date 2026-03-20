@@ -43,6 +43,8 @@
 #define CONFIG_OS "hpux"
 #elif defined(__HAIKU__)
 #define CONFIG_OS "haiku"
+#elif defined(__NuttX__)
+#define CONFIG_OS "nuttx"
 #elif defined (TARGET_WASM)
 #define CONFIG_OS "wasm"
 #else

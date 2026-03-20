@@ -403,6 +403,29 @@
 	#define UCONTEXT_REG_R12(ctx) (((ucontext_t*)(ctx))->uc_mcontext.__gregs[_REG_R12])
 	#define UCONTEXT_REG_CPSR(ctx) (((ucontext_t*)(ctx))->uc_mcontext.__gregs[_REG_CPSR])
 	#define UCONTEXT_REG_VFPREGS(ctx) (((ucontext_t*)(ctx))->uc_mcontext.__gregs[_REG_VFPREGS])
+#elif defined(__NuttX__)
+	/* NuttX ARMv7-M uses struct xcptcontext with a regs[] array.
+	 * REG_R0..REG_R15, REG_XPSR are defined in NuttX's arch headers. */
+	typedef struct xcptcontext arm_ucontext;
+	typedef struct xcptcontext ucontext_t;
+
+	#define UCONTEXT_REG_PC(ctx) (((ucontext_t*)(ctx))->regs[REG_R15])
+	#define UCONTEXT_REG_SP(ctx) (((ucontext_t*)(ctx))->regs[REG_R13])
+	#define UCONTEXT_REG_LR(ctx) (((ucontext_t*)(ctx))->regs[REG_R14])
+	#define UCONTEXT_REG_R0(ctx) (((ucontext_t*)(ctx))->regs[REG_R0])
+	#define UCONTEXT_REG_R1(ctx) (((ucontext_t*)(ctx))->regs[REG_R1])
+	#define UCONTEXT_REG_R2(ctx) (((ucontext_t*)(ctx))->regs[REG_R2])
+	#define UCONTEXT_REG_R3(ctx) (((ucontext_t*)(ctx))->regs[REG_R3])
+	#define UCONTEXT_REG_R4(ctx) (((ucontext_t*)(ctx))->regs[REG_R4])
+	#define UCONTEXT_REG_R5(ctx) (((ucontext_t*)(ctx))->regs[REG_R5])
+	#define UCONTEXT_REG_R6(ctx) (((ucontext_t*)(ctx))->regs[REG_R6])
+	#define UCONTEXT_REG_R7(ctx) (((ucontext_t*)(ctx))->regs[REG_R7])
+	#define UCONTEXT_REG_R8(ctx) (((ucontext_t*)(ctx))->regs[REG_R8])
+	#define UCONTEXT_REG_R9(ctx) (((ucontext_t*)(ctx))->regs[REG_R9])
+	#define UCONTEXT_REG_R10(ctx) (((ucontext_t*)(ctx))->regs[REG_R10])
+	#define UCONTEXT_REG_R11(ctx) (((ucontext_t*)(ctx))->regs[REG_R11])
+	#define UCONTEXT_REG_R12(ctx) (((ucontext_t*)(ctx))->regs[REG_R12])
+	#define UCONTEXT_REG_CPSR(ctx) (((ucontext_t*)(ctx))->regs[REG_XPSR])
 #endif
 
 #elif defined(TARGET_ARM64)
