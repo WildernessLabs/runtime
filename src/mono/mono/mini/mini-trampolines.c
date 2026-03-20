@@ -1216,7 +1216,7 @@ mono_trampolines_init (void)
 {
 	mono_os_mutex_init_recursive (&trampolines_mutex);
 	gboolean disable_tramps = FALSE;
-#if TARGET_WASM
+#if TARGET_WASM || HOST_NUTTX
 	disable_tramps = TRUE;
 #endif
 

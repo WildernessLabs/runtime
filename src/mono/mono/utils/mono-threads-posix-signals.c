@@ -70,6 +70,8 @@ abort_signal_get (void)
 {
 #if defined(HOST_ANDROID)
 	return SIGTTIN;
+#elif defined(HOST_NUTTX)
+	return 22;
 #elif defined (__OpenBSD__)
 	return SIGUSR1;
 #elif defined (SIGRTMIN)
@@ -89,6 +91,11 @@ suspend_signal_get (void)
 {
 #if defined(HOST_ANDROID)
 	return SIGPWR;
+#elif defined(HOST_NUTTX)
+	/* NuttX legacy firmware supports signals 0-31. Signals 20-30 are unused.
+	 * The Meadow.OS NuttX headers define SIGRTMIN=32 but the actual firmware
+	 * only supports 0-31, so we use fixed signal numbers in the safe range. */
+	return 20;
 #elif defined (SIGRTMIN)
 	static int suspend_signum = -1;
 	if (suspend_signum == -1)
@@ -108,6 +115,8 @@ restart_signal_get (void)
 {
 #if defined(HOST_ANDROID)
 	return SIGXCPU;
+#elif defined(HOST_NUTTX)
+	return 21;
 #elif defined (SIGRTMIN)
 	static int restart_signum = -1;
 	if (restart_signum == -1)
