@@ -544,6 +544,9 @@
 /* ... */
 #cmakedefine HOST_WASI 1
 
+/* Targeting NuttX RTOS */
+#cmakedefine HOST_NUTTX 1
+
 /* ... */
 #cmakedefine HOST_X86 1
 
@@ -594,6 +597,9 @@
 
 /* The JIT/AOT targets Apple mobile platforms */
 #cmakedefine TARGET_APPLE_MOBILE 1
+
+/* Targeting NuttX RTOS */
+#cmakedefine TARGET_NUTTX 1
 
 /* byte order of target */
 #define TARGET_BYTE_ORDER @TARGET_BYTE_ORDER@

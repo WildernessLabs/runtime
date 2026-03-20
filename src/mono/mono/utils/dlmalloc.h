@@ -201,6 +201,7 @@ size_t dlmalloc_footprint(void);
 */
 #ifndef HAVE_USR_INCLUDE_MALLOC_H
 #ifndef _MALLOC_H
+#ifndef __INCLUDE_MALLOC_H
 #ifndef MALLINFO_FIELD_TYPE
 #define MALLINFO_FIELD_TYPE size_t
 #endif /* MALLINFO_FIELD_TYPE */
@@ -216,6 +217,7 @@ struct mallinfo {
   MALLINFO_FIELD_TYPE fordblks; /* total free space */
   MALLINFO_FIELD_TYPE keepcost; /* releasable (via malloc_trim) space */
 };
+#endif  /* __INCLUDE_MALLOC_H */
 #endif  /* _MALLOC_H */
 #endif  /* HAVE_USR_INCLUDE_MALLOC_H */
 

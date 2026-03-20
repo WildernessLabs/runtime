@@ -66,6 +66,8 @@ static inline size_t minipal_get_current_thread_id_no_cache(void)
     tid = (size_t)find_thread(NULL);
 #elif defined(__sun)
     tid = (size_t)pthread_self();
+#elif defined(__NuttX__)
+    tid = (size_t)pthread_self();
 #elif defined(__wasm)
     tid = (size_t)(void*)pthread_self();
 #else

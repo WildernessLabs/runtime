@@ -7234,6 +7234,9 @@ mono_arch_stop_single_stepping (void)
 gboolean
 mono_arch_is_single_step_event (void *info, void *sigctx)
 {
+#ifdef HOST_NUTTX
+	return FALSE;
+#else
 	siginfo_t *sinfo = (siginfo_t*)info;
 
 	if (!ss_trigger_page)
@@ -7244,6 +7247,7 @@ mono_arch_is_single_step_event (void *info, void *sigctx)
 		return TRUE;
 	else
 		return FALSE;
+#endif
 }
 
 /*
@@ -7254,6 +7258,9 @@ mono_arch_is_single_step_event (void *info, void *sigctx)
 gboolean
 mono_arch_is_breakpoint_event (void *info, void *sigctx)
 {
+#ifdef HOST_NUTTX
+	return FALSE;
+#else
 	siginfo_t *sinfo = (siginfo_t*)info;
 
 	if (!ss_trigger_page)
@@ -7268,6 +7275,7 @@ mono_arch_is_breakpoint_event (void *info, void *sigctx)
 	} else {
 		return FALSE;
 	}
+#endif
 }
 
 /*

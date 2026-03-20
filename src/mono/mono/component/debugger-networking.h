@@ -53,12 +53,14 @@ struct _MonoAddressEntry {
 	int socktype;
 	int protocol;
 	int address_len;
+#ifdef HAVE_NETINET_IN_H
 	union {
 		struct in_addr v4;
 #ifdef HAVE_STRUCT_SOCKADDR_IN6
 		struct in6_addr v6;
 #endif
 	} address;
+#endif
 	const char *canonical_name;
 	MonoAddressEntry *next;
 };
@@ -68,6 +70,7 @@ typedef struct {
 	char **aliases;
 } MonoAddressInfo;
 
+#ifdef HAVE_NETINET_IN_H
 typedef union {
 	struct sockaddr_in v4;
 #ifdef HAVE_STRUCT_SOCKADDR_IN6
@@ -75,13 +78,16 @@ typedef union {
 #endif
 	struct sockaddr addr;
 } MonoSocketAddress;
+#endif
 
 /* This only supports IPV4 / IPV6 and tcp */
 int mono_debugger_get_address_info (const char *hostname, int port, int flags, MonoAddressInfo **res);
 
 void mono_debugger_free_address_info (MonoAddressInfo *ai);
 
+#ifdef HAVE_NETINET_IN_H
 void mono_debugger_socket_address_init (MonoSocketAddress *sa, socklen_t *len, int family, const void *address, int port);
+#endif
 
 void mono_debugger_networking_init (void);
 void mono_debugger_networking_shutdown (void);

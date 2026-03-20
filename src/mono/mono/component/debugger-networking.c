@@ -52,6 +52,7 @@ mono_debugger_networking_shutdown (void)
 }
 
 
+#ifdef HAVE_NETINET_IN_H
 /* port in host order, address in network order */
 void
 mono_debugger_socket_address_init (MonoSocketAddress *sa, socklen_t *len, int family, const void *address, int port)
@@ -81,6 +82,7 @@ mono_debugger_socket_address_init (MonoSocketAddress *sa, socklen_t *len, int fa
 		g_error ("Cannot handle address family %d", family);
 	}
 }
+#endif /* HAVE_NETINET_IN_H */
 
 
 void

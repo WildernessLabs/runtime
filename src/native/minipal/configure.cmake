@@ -10,6 +10,13 @@ check_include_files("sys/resource.h" HAVE_RESOURCE_H)
 check_function_exists(sysctlbyname HAVE_SYSCTLBYNAME)
 check_function_exists(fsync HAVE_FSYNC)
 
+# NuttX overrides: newlib stubs report false positives
+if(HOST_NUTTX)
+  set(HAVE_SYSCTLBYNAME 0)
+  set(HAVE_ARC4RANDOM_BUF 0)
+  set(HAVE_GETRANDOM 0)
+endif()
+
 check_symbol_exists(arc4random_buf "stdlib.h" HAVE_ARC4RANDOM_BUF)
 check_symbol_exists(getrandom "sys/random.h" HAVE_GETRANDOM)
 check_symbol_exists(O_CLOEXEC fcntl.h HAVE_O_CLOEXEC)

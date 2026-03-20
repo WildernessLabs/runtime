@@ -511,13 +511,23 @@ mono_atomic_cas_i64(volatile gint64 *dest, gint64 exch, gint64 comp)
 	return gcc_sync_val_compare_and_swap (dest, comp, exch);
 }
 
-#elif defined (__arm__) && defined (HAVE_ARMV7) && (defined(TARGET_IOS) || defined(TARGET_TVOS) || defined(TARGET_WATCHOS) || defined(TARGET_ANDROID))
+#elif defined (__arm__) && defined (HAVE_ARMV7) && (defined(TARGET_IOS) || defined(TARGET_TVOS) || defined(TARGET_WATCHOS) || defined(TARGET_ANDROID) || defined(TARGET_NUTTX))
 
 #ifdef MONO_ATOMIC_USES_LOCK
 #error MONO_ATOMIC_USES_LOCK defined
 #endif
 
-#if defined (TARGET_IOS) || defined (TARGET_TVOS) || defined (TARGET_WATCHOS)
+#if defined (TARGET_NUTTX)
+
+/* Cortex-M7 (ARMv7-M) doesn't have LDREXD/STREXD but GCC's
+ * __sync builtins handle 64-bit CAS via a library call. */
+gint64
+mono_atomic_cas_i64(volatile gint64 *dest, gint64 exch, gint64 comp)
+{
+	return gcc_sync_val_compare_and_swap (dest, comp, exch);
+}
+
+#elif defined (TARGET_IOS) || defined (TARGET_TVOS) || defined (TARGET_WATCHOS)
 
 #ifndef __clang__
 #error "Not supported."
@@ -529,10 +539,10 @@ mono_atomic_cas_i64(volatile gint64 *dest, gint64 exch, gint64 comp)
 	return  gcc_sync_val_compare_and_swap (dest, comp, exch);
 }
 
-#elif defined (TARGET_ANDROID)
+#elif defined (TARGET_ANDROID) || defined (TARGET_NUTTX)
 
-/* Some Android systems can't find the 64-bit CAS intrinsic at runtime,
- * so we have to roll our own...
+/* Some Android systems (and NuttX) can't find the 64-bit CAS intrinsic at runtime,
+ * so we have to roll our own using LDREXD/STREXD (ARMv7+)...
  */
 
 gint64 mono_atomic_cas_i64(volatile gint64 *dest, gint64 exch, gint64 comp) __attribute__ ((__naked__));

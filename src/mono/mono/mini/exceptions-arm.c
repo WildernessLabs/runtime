@@ -649,7 +649,7 @@ mono_arch_handle_exception (void *ctx, gpointer obj)
 gpointer
 mono_arch_ip_from_context (void *sigctx)
 {
-#ifdef MONO_CROSS_COMPILE
+#if defined(MONO_CROSS_COMPILE) || defined(HOST_NUTTX)
 	g_assert_not_reached ();
 #else
 	arm_ucontext *my_uc = (arm_ucontext*)sigctx;

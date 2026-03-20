@@ -103,7 +103,9 @@ add_definitions(-DHAVE_CONFIG_H)
 
 if(GCC)
   add_definitions(-g)  # TODO: should this really be on by default?
-  add_definitions(-fPIC)
+  if(NOT CMAKE_SYSTEM_VARIANT STREQUAL "nuttx")
+    add_definitions(-fPIC)
+  endif()
   add_definitions(-fvisibility=hidden)
   set(USE_GCC_ATOMIC_OPS 1)
 endif()
@@ -292,6 +294,17 @@ elseif(CLR_CMAKE_HOST_OS STREQUAL "haiku")
   set(HOST_HAIKU 1)
   add_definitions(-D_GNU_SOURCE -D_BSD_SOURCE -D_REENTRANT)
   add_definitions(-D_THREAD_SAFE)
+elseif(CLR_CMAKE_HOST_OS STREQUAL "generic" AND CMAKE_SYSTEM_VARIANT STREQUAL "nuttx")
+  set(HOST_NUTTX 1)
+  add_definitions(-D__NuttX__ -D_REENTRANT)
+  add_definitions(-D_THREAD_SAFE)
+  add_definitions(-DDISABLE_EGD_SOCKET)
+  add_definitions(-DDISABLE_EVENTPIPE)
+  set(ENABLE_PERFTRACING 0)
+  set(PTHREAD_POINTER_ID 1)
+  set(DISABLE_SHARED_LIBS 1)
+  set(DISABLE_EXECUTABLES 1)
+  set(STATIC_COMPONENTS 1)
 else()
   message(FATAL_ERROR "Host '${CLR_CMAKE_HOST_OS}' not supported.")
 endif()
@@ -359,6 +372,12 @@ elseif(TARGET_SYSTEM_NAME STREQUAL "freebsd")
 elseif(TARGET_SYSTEM_NAME STREQUAL "haiku")
   set(TARGET_UNIX 1)
   set(TARGET_HAIKU 1)
+elseif(TARGET_SYSTEM_NAME STREQUAL "generic" AND CMAKE_SYSTEM_VARIANT STREQUAL "nuttx")
+  set(TARGET_UNIX 1)
+  set(TARGET_NUTTX 1)
+  if (CMAKE_BUILD_TYPE STREQUAL "Release")
+    add_compile_options(-Os)
+  endif()
 else()
   message(FATAL_ERROR "Target '${TARGET_SYSTEM_NAME}' not supported.")
 endif()
@@ -469,6 +488,9 @@ elseif(TARGET_ARCH MATCHES "arm")
   set(NO_UNALIGNED_ACCESS 1)
   set(HAVE_ARMV5 1)
   set(HAVE_ARMV6 1)
+  if(TARGET_NUTTX)
+    set(HAVE_ARMV7 1)
+  endif()
   #set(HAVE_ARMV7 1) # TODO: figure out if we should set this
 elseif(TARGET_ARCH STREQUAL "riscv64")
   set(TARGET_RISCV 1)
@@ -584,7 +606,9 @@ if(GCC)
   endif()
 
   check_c_compiler_flag("-Werror=incompatible-pointer-types" WERROR_INCOMPATIBLE_POINTER_TYPES)
-  if(WERROR_INCOMPATIBLE_POINTER_TYPES)
+  if(WERROR_INCOMPATIBLE_POINTER_TYPES AND NOT HOST_NUTTX)
+    # NuttX/newlib defines int32_t as 'long int' while 'int' is also 32-bit;
+    # this causes spurious incompatible-pointer-types on gint32* vs int* args.
     set(WERROR_C "${WERROR_C} -Werror=incompatible-pointer-types")
   endif()
 
@@ -598,6 +622,12 @@ if(GCC)
     # When building under WASI SDK, it's stricter about discarding 'const' qualifiers, causing some existing
     # code to be rejected
     set(WERROR_C "${WERROR_C} -Wno-incompatible-pointer-types-discards-qualifiers")
+  endif()
+
+  if(HOST_NUTTX)
+    # NuttX/newlib defines int32_t as 'long int' not 'int'. Both are 32-bit on ARM
+    # but GCC 14+ treats int*/long* mismatch as an error. Downgrade to warning.
+    set(WERROR_C "${WERROR_C} -Wno-error=incompatible-pointer-types")
   endif()
 
   append("${WARNINGS} ${WARNINGS_C} ${WERROR} ${WERROR_C}" CMAKE_C_FLAGS)
@@ -747,6 +777,8 @@ elseif(GC_SUSPEND STREQUAL "default")
     # use preemptive
   elseif(TARGET_SYSTEM_NAME STREQUAL "WASI")
     # use preemptive
+  elseif(TARGET_NUTTX)
+    # use preemptive for NuttX RTOS
   else()
     set(ENABLE_HYBRID_SUSPEND 1)
   endif()
@@ -830,6 +862,8 @@ endif()
 # OTHER CHECKS
 ######################################
 if(HOST_WIN32)
+  set(NAME_DEV_RANDOM "\"\"")
+elseif(HOST_NUTTX)
   set(NAME_DEV_RANDOM "\"\"")
 else()
   # FIXME:
