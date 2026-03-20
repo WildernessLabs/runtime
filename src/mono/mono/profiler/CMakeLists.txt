@@ -35,7 +35,7 @@ if(NOT DISABLE_LIBS)
     endif()
   endif()
 
-  if(NOT HOST_WASI)
+  if(NOT HOST_WASI AND NOT HOST_NUTTX)
     add_library(mono-profiler-aot-static STATIC aot.c helper.c)
     target_link_libraries(mono-profiler-aot-static PRIVATE monoapi)
     set_target_properties(mono-profiler-aot-static PROPERTIES OUTPUT_NAME mono-profiler-aot)

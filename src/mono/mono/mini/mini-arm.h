@@ -324,7 +324,7 @@ typedef struct MonoCompileArch {
 
 #define MONO_ARCH_USE_SIGACTION 1
 
-#if defined(HOST_WATCHOS)
+#if defined(HOST_WATCHOS) || defined(HOST_NUTTX)
 #undef MONO_ARCH_USE_SIGACTION
 #endif
 

@@ -460,7 +460,7 @@ mono_monoctx_to_sigctx (MonoContext *mctx, void *ctx)
 void
 mono_sigctx_to_monoctx (void *sigctx, MonoContext *mctx)
 {
-#ifdef MONO_CROSS_COMPILE
+#if defined(MONO_CROSS_COMPILE) || defined(HOST_NUTTX)
 	g_assert_not_reached ();
 #elif defined(HOST_WIN32)
 	CONTEXT *context = (CONTEXT*)sigctx;
@@ -487,7 +487,7 @@ mono_sigctx_to_monoctx (void *sigctx, MonoContext *mctx)
 void
 mono_monoctx_to_sigctx (MonoContext *mctx, void *ctx)
 {
-#ifdef MONO_CROSS_COMPILE
+#if defined(MONO_CROSS_COMPILE) || defined(HOST_NUTTX)
 	g_assert_not_reached ();
 #elif defined(HOST_WIN32)
 	CONTEXT *context = (CONTEXT*)ctx;
