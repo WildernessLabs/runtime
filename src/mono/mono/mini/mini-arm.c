@@ -34,6 +34,10 @@
 #include "mini-runtime.h"
 #include "aot-runtime.h"
 #include "mono/arch/arm/arm-vfp-codegen.h"
+
+#if defined(__NuttX__)
+#include <nuttx/cache.h>
+#endif
 #include "mono/utils/mono-tls-inline.h"
 
 MONO_DISABLE_WARNING(4127) /* conditional expression is constant */
@@ -1060,6 +1064,9 @@ mono_arch_flush_icache (guint8 *code, gint size)
 #if defined(MONO_CROSS_COMPILE)
 #elif __APPLE__
 	sys_icache_invalidate (code, size);
+#elif defined(__NuttX__)
+	/* NuttX: use the kernel cache invalidation API (SCB->ICIALLU on Cortex-M7) */
+	up_invalidate_icache ((uintptr_t)code, (uintptr_t)code + size);
 #else
     __builtin___clear_cache ((char*)code, (char*)code + size);
 #endif

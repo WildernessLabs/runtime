@@ -39,8 +39,11 @@
 #if defined(_POSIX_VERSION) && !defined (HOST_WASM)
 
 #include <pthread.h>
+#include <sched.h>
 
+#if HAVE_SYS_MMAN_H
 #include <sys/mman.h>
+#endif
 
 #ifdef HAVE_SYS_RESOURCE_H
 #include <sys/resource.h>
@@ -87,6 +90,23 @@ mono_thread_platform_create_thread (MonoThreadStart thread_fn, gpointer thread_d
 	if (res != 0)
 		g_error ("%s: pthread_attr_setstacksize failed, error: \"%s\" (%d)", __func__, g_strerror (res), res);
 #endif /* HAVE_PTHREAD_ATTR_SETSTACKSIZE */
+
+#ifdef HOST_NUTTX
+	/* NuttX defaults to SCHED_FIFO which runs higher-priority threads exclusively,
+	 * starving lower-priority threads. .NET expects all threads at the same priority
+	 * to make progress (e.g. type initialization can start on any thread). Use
+	 * SCHED_RR so same-priority threads get time-sliced. */
+	{
+		struct sched_param sched;
+		sched.sched_priority = 80;
+		res = pthread_attr_setschedpolicy (&attr, SCHED_RR);
+		if (res != 0)
+			g_warning ("%s: pthread_attr_setschedpolicy SCHED_RR failed, error: \"%s\" (%d)", __func__, g_strerror (res), res);
+		res = pthread_attr_setschedparam (&attr, &sched);
+		if (res != 0)
+			g_warning ("%s: pthread_attr_setschedparam failed, error: \"%s\" (%d)", __func__, g_strerror (res), res);
+	}
+#endif
 
 	/* Actually start the thread */
 	res = mono_gc_pthread_create (&thread, &attr, (gpointer (*)(gpointer)) thread_fn, thread_data);
@@ -137,11 +157,11 @@ mono_threads_platform_exit (gsize exit_code)
 	pthread_exit ((gpointer) exit_code);
 }
 
-#if HOST_FUCHSIA
+#if HOST_FUCHSIA || defined(HOST_NUTTX)
 int
 mono_thread_info_get_system_max_stack_size (void)
 {
-	/* For now, we do not enforce any limits */
+	/* NuttX/Fuchsia: no getrlimit, do not enforce limits */
 	return INT_MAX;
 }
 
@@ -283,6 +303,10 @@ mono_native_thread_join (MonoNativeThreadId tid)
 void
 mono_memory_barrier_process_wide (void)
 {
+#ifdef HOST_NUTTX
+	/* NuttX on Cortex-M7 is single-core, a compiler+data barrier suffices. */
+	__sync_synchronize ();
+#else
 	int status;
 
 	status = pthread_mutex_lock (&memory_barrier_process_wide_mutex);
@@ -308,6 +332,7 @@ mono_memory_barrier_process_wide (void)
 
 	status = pthread_mutex_unlock (&memory_barrier_process_wide_mutex);
 	g_assert (status == 0);
+#endif
 }
 
 #endif /* defined(_POSIX_VERSION) */
