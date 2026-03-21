@@ -167,7 +167,11 @@ mono_pagesize (void)
 	// that Coverity finds in consumer code.
 
 	if (saved_pagesize == -1)
-		return 64*1024;
+#ifdef HOST_NUTTX
+		saved_pagesize = 4096; /* NuttX: no MMU, use standard page size */
+#else
+		saved_pagesize = 64*1024;
+#endif
 
 	return saved_pagesize;
 }
