@@ -295,9 +295,11 @@ elseif(HOST_NUTTX)
   set(HAVE_SIGNAL_H 1)
   set(HAVE_SIGACTION 1)
   set(HAVE_DIRENT_H 1)
-  # NuttX does NOT have mmap, shared libs, or full process model
-  set(HAVE_SYS_MMAN_H 0)
-  set(HAVE_MMAP 0)
+  # NuttX does NOT have mmap. We provide mmap/munmap stubs in
+  # mono_nuttx_stubs.c that use posix_memalign/free. HAVE_MMAP=1
+  # so the fileio fallback path in image.c is compiled.
+  set(HAVE_SYS_MMAN_H 1)
+  set(HAVE_MMAP 1)
   set(HAVE_MADVISE 0)
   set(HAVE_MREMAP 0)
   set(HAVE_EXECINFO_H 0)

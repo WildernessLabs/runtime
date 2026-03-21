@@ -21,7 +21,7 @@ BUILD_DIR="${MONO_SRC}/build-nuttx-${BUILD_TYPE,,}"
 
 # Default NuttX include path — sibling Meadow.OS repo
 if [ -z "${NUTTX_INCLUDE_DIR:-}" ]; then
-  CANDIDATE="${RUNTIME_ROOT}/../Meadow.OS/nuttx/include"
+  CANDIDATE="${RUNTIME_ROOT}/../Meadow/nuttx/include"
   if [ -d "${CANDIDATE}" ]; then
     NUTTX_INCLUDE_DIR="$(cd "${CANDIDATE}" && pwd)"
   else
@@ -67,7 +67,8 @@ cmake "${MONO_SRC}" \
   -DDISABLE_EVENTPIPE=1 \
   -DDISABLE_EMBEDDED_PDB=1 \
   -DENABLE_SMALL_CONFIG=1 \
-  -DSTATIC_COMPONENTS=1
+  -DSTATIC_COMPONENTS=1 \
+  -DDISABLE_SGEN_MAJOR_MARKSWEEP_CONC=1
 
 echo ""
 echo "=== CMake configure complete. Building... ==="
