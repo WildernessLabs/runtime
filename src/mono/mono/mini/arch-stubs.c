@@ -98,7 +98,7 @@ mono_arch_exceptions_init (void)
 
 #endif
 
-#if defined (DISABLE_JIT) && !defined (HOST_WASM)
+#if defined (DISABLE_JIT) && !defined (HOST_WASM) && !defined (HOST_NUTTX)
 gpointer
 mono_arch_get_restore_context (MonoTrampInfo **info, gboolean aot)
 {
@@ -142,3 +142,51 @@ mono_arch_get_throw_corlib_exception (MonoTrampInfo **info, gboolean aot)
 }
 
 #endif /* DISABLE_JIT */
+
+#if defined (DISABLE_JIT) && defined (HOST_NUTTX)
+/* NuttX interpreter-only: exception trampolines not needed — interpreter
+ * handles exceptions internally. Return NULL; mono_exceptions_init skips
+ * registration when the pointer is NULL (same as mono_llvm_only path).
+ */
+gpointer
+mono_arch_get_restore_context (MonoTrampInfo **info, gboolean aot)
+{
+	if (info) *info = NULL;
+	return NULL;
+}
+
+gpointer
+mono_arch_get_call_filter (MonoTrampInfo **info, gboolean aot)
+{
+	if (info) *info = NULL;
+	return NULL;
+}
+
+gpointer
+mono_arch_get_throw_exception (MonoTrampInfo **info, gboolean aot)
+{
+	if (info) *info = NULL;
+	return NULL;
+}
+
+gpointer
+mono_arch_get_rethrow_exception (MonoTrampInfo **info, gboolean aot)
+{
+	if (info) *info = NULL;
+	return NULL;
+}
+
+gpointer
+mono_arch_get_rethrow_preserve_exception (MonoTrampInfo **info, gboolean aot)
+{
+	if (info) *info = NULL;
+	return NULL;
+}
+
+gpointer
+mono_arch_get_throw_corlib_exception (MonoTrampInfo **info, gboolean aot)
+{
+	if (info) *info = NULL;
+	return NULL;
+}
+#endif /* DISABLE_JIT && HOST_NUTTX */

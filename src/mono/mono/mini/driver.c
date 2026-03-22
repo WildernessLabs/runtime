@@ -2803,6 +2803,12 @@ mono_runtime_set_execution_mode_full (int mode, gboolean override)
 		mono_use_interpreter = TRUE;
 
 		mono_ee_features.force_use_interpreter = TRUE;
+#ifdef HOST_NUTTX
+		/* NuttX DISABLE_JIT build has no arch trampolines — same as
+		 * INTERP_LLVMONLY. Setting mono_llvm_only skips all trampoline
+		 * creation and icall registration that requires JIT code. */
+		mono_llvm_only = TRUE;
+#endif
 		break;
 
 	case MONO_AOT_MODE_NORMAL:
