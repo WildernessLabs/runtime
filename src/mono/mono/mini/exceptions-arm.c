@@ -415,8 +415,13 @@ mono_arm_get_exception_trampolines (gboolean aot)
 GSList*
 mono_arm_get_exception_trampolines (gboolean aot)
 {
+#ifdef HOST_NUTTX
+	/* NuttX interpreter-only: no exception trampolines needed */
+	return NULL;
+#else
 	g_assert_not_reached ();
 	return NULL;
+#endif
 }
 
 #endif
@@ -599,8 +604,9 @@ get_handle_signal_exception_addr (void)
 gboolean
 mono_arch_handle_exception (void *ctx, gpointer obj)
 {
-#if defined(MONO_CROSS_COMPILE)
-	g_assert_not_reached ();
+#if defined(MONO_CROSS_COMPILE) || defined(HOST_NUTTX)
+	/* NuttX doesn't use signal-based exception handling */
+	return FALSE;
 #elif defined(MONO_ARCH_USE_SIGACTION)
 	arm_ucontext *sigctx = (arm_ucontext*)ctx;
 	/*
@@ -649,7 +655,10 @@ mono_arch_handle_exception (void *ctx, gpointer obj)
 gpointer
 mono_arch_ip_from_context (void *sigctx)
 {
-#if defined(MONO_CROSS_COMPILE) || defined(HOST_NUTTX)
+#if defined(HOST_NUTTX)
+	/* NuttX doesn't use signal-based exception handling */
+	return NULL;
+#elif defined(MONO_CROSS_COMPILE)
 	g_assert_not_reached ();
 #else
 	arm_ucontext *my_uc = (arm_ucontext*)sigctx;
