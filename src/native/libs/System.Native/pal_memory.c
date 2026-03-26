@@ -19,6 +19,10 @@
     #define MALLOC_SIZE(s) malloc_usable_size(s)
 #elif defined(TARGET_SUNOS)
     #define MALLOC_SIZE(s) (*((size_t*)(s)-1))
+#elif defined(__NuttX__)
+    // NuttX has no malloc_usable_size. AlignedRealloc will copy new_size bytes
+    // (safe: may read past old allocation, but on bare-metal SDRAM this is benign).
+    #define MALLOC_SIZE(s) ((uintptr_t)-1)
 #else
     #error "Platform doesn't support malloc_usable_size or malloc_size"
 #endif

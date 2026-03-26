@@ -6,7 +6,7 @@
 #define __MONO_MINI_INTERPRETER_H__
 #include <mono/mini/mini-runtime.h>
 
-#ifdef TARGET_WASM
+#if defined(TARGET_WASM) || defined(__NuttX__)
 #define INTERP_ICALL_TRAMP_IARGS 12
 #define INTERP_ICALL_TRAMP_FARGS 12
 #else
@@ -23,7 +23,7 @@ struct _InterpMethodArguments {
 	double *fargs;
 	gpointer *retval;
 	size_t is_float_ret;
-#ifdef TARGET_WASM // FIXME HOST
+#if defined(TARGET_WASM) || defined(__NuttX__)
 	MonoMethodSignature *sig;
 #endif
 	gpointer iargs_buf [8];
@@ -64,6 +64,16 @@ mono_wasm_get_interp_to_native_trampoline (MonoMethodSignature *sig);
 
 gpointer
 mono_wasm_get_native_to_interp_trampoline (MonoMethod *method, gpointer extra_arg);
+
+#endif
+
+#ifdef __NuttX__
+
+gpointer
+mono_nuttx_get_interp_to_native_trampoline (MonoMethodSignature *sig);
+
+gpointer
+mono_nuttx_get_native_to_interp_trampoline (MonoMethod *method, MonoFtnDesc *ftndesc);
 
 #endif
 

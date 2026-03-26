@@ -228,14 +228,27 @@ int32_t SystemNative_CreateThread(uintptr_t stackSize, void *(*startAddress)(voi
         return false;
     }
 
+#ifdef PTHREAD_CREATE_DETACHED
     error = pthread_attr_setdetachstate(&attrs, PTHREAD_CREATE_DETACHED);
     assert(error == 0);
+#endif
 
 #ifdef HOST_APPLE
     // Match Windows stack size
     if (stackSize == 0)
     {
         stackSize = 1536 * 1024;
+    }
+#endif
+
+#ifdef __NuttX__
+    // NuttX SDRAM is limited (~29MB shared between GC heap, assembly caches,
+    // thread stacks, and Mono metadata). .NET requests ~1MB per thread by default,
+    // which exhausts memory with just a handful of ThreadPool threads.
+    // Cap at 65536 to match CONFIG_PTHREAD_STACK_DEFAULT.
+    if (stackSize == 0 || stackSize > 65536)
+    {
+        stackSize = 65536;
     }
 #endif
 
@@ -253,6 +266,12 @@ int32_t SystemNative_CreateThread(uintptr_t stackSize, void *(*startAddress)(voi
     pthread_t threadId;
     error = pthread_create(&threadId, &attrs, startAddress, parameter);
     if (error != 0) goto CreateThreadExit;
+
+#ifndef PTHREAD_CREATE_DETACHED
+    // NuttX doesn't support PTHREAD_CREATE_DETACHED attribute;
+    // detach after creation instead.
+    pthread_detach(threadId);
+#endif
 
     result = true;
 

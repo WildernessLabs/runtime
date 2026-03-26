@@ -6,7 +6,9 @@
 #include "pal_utilities.h"
 
 #include <assert.h>
+#ifndef __NuttX__
 #include <utime.h>
+#endif
 #include <time.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -24,6 +26,12 @@ enum
 
 int32_t SystemNative_UTimensat(const char* path, TimeSpec* times)
 {
+#ifdef __NuttX__
+    // NuttX has no utimensat/utimes/lutimes
+    (void)path; (void)times;
+    set_errno(ENOTSUP);
+    return -1;
+#else
     int32_t result;
 #if HAVE_UTIMENSAT
     struct timespec updatedTimes[2];
@@ -50,10 +58,17 @@ int32_t SystemNative_UTimensat(const char* path, TimeSpec* times)
 #endif
 
     return result;
+#endif // __NuttX__
 }
 
 int32_t SystemNative_FUTimens(intptr_t fd, TimeSpec* times)
 {
+#ifdef __NuttX__
+    // NuttX has no futimens/futimes
+    (void)fd; (void)times;
+    set_errno(ENOTSUP);
+    return -1;
+#else
     int32_t result;
 
 #if HAVE_FUTIMENS
@@ -77,6 +92,7 @@ int32_t SystemNative_FUTimens(intptr_t fd, TimeSpec* times)
 #endif
 
     return result;
+#endif // __NuttX__
 }
 
 int64_t SystemNative_GetTimestamp(void)
@@ -114,7 +130,11 @@ int64_t SystemNative_GetBootTimeTicks(void)
 
 double SystemNative_GetCpuUtilization(ProcessCpuInformation* previousCpuInfo)
 {
-#ifndef HOST_WASI
+#if defined(__NuttX__)
+    // NuttX user space has no getrusage
+    (void)previousCpuInfo;
+    return 0;
+#elif !defined(HOST_WASI)
     uint64_t kernelTime = 0;
     uint64_t userTime = 0;
 

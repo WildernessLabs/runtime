@@ -30,6 +30,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <glib.h>
+#ifdef __NuttX__
+#include <syslog.h>
+#endif
 
 /* The current fatal levels, error is always fatal */
 static GLogLevelFlags fatal = G_LOG_LEVEL_ERROR;
@@ -386,12 +389,23 @@ default_stderr_handler (const gchar *message)
 void
 g_log_default_handler (const gchar *log_domain, GLogLevelFlags log_level, const gchar *message, gpointer unused_data)
 {
+#ifdef __NuttX__
+	/* NuttX: use syslog instead of fprintf(stdout) which goes to a FIFO
+	 * that may be non-blocking/unread in headless mode.
+	 */
+	int priority = (log_level & fatal) ? 0 /* LOG_EMERG */ : 5 /* LOG_NOTICE */;
+	syslog (priority, "%s%s%s\n",
+		log_domain != NULL ? log_domain : "",
+		log_domain != NULL ? ": " : "",
+		message);
+#else
 	FILE *target = stdout;
 
 	fprintf (target, "%s%s%s\n",
 		log_domain != NULL ? log_domain : "",
 		log_domain != NULL ? ": " : "",
 		message);
+#endif
 
 	if (log_level & fatal) {
 		fflush (stdout);
@@ -403,13 +417,21 @@ g_log_default_handler (const gchar *log_domain, GLogLevelFlags log_level, const 
 static void
 default_stdout_handler (const gchar *string)
 {
+#ifdef __NuttX__
+	syslog (5 /* LOG_NOTICE */, "%s", string);
+#else
 	fprintf (stdout, "%s", string);
+#endif
 }
 
 static void
 default_stderr_handler (const gchar *string)
 {
+#ifdef __NuttX__
+	syslog (3 /* LOG_ERR */, "%s", string);
+#else
 	fprintf (stderr, "%s", string);
+#endif
 }
 
 #endif

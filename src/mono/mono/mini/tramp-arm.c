@@ -1070,15 +1070,28 @@ mono_arch_create_sdb_trampoline (gboolean single_step, MonoTrampInfo **info, gbo
 gpointer
 mono_arch_get_interp_to_native_trampoline (MonoTrampInfo **info)
 {
+#ifdef __NuttX__
+	/* NuttX uses per-signature C trampolines (aot-runtime-nuttx.c) */
+	if (info)
+		*info = NULL;
+	return NULL;
+#else
 	g_assert_not_reached ();
 	return NULL;
+#endif
 }
 
 gpointer
 mono_arch_get_native_to_interp_trampoline (MonoTrampInfo **info)
 {
+#ifdef __NuttX__
+	if (info)
+		*info = NULL;
+	return NULL;
+#else
 	g_assert_not_reached ();
 	return NULL;
+#endif
 }
 #endif /* DISABLE_JIT */
 

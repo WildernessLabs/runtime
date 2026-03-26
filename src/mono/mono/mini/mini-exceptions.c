@@ -1745,10 +1745,26 @@ setup_stack_trace (MonoException *mono_ex, GSList **dynamic_methods, GList *trac
 		trace_ips_copy = g_list_reverse (trace_ips_copy);
 		ERROR_DECL (error);
 		MonoArray *ips_arr = mono_glist_to_array (trace_ips_copy, mono_defaults.int_class, error);
+#ifdef __NuttX__
+		if (!is_ok (error)) {
+			g_warning ("setup_stack_trace: OOM allocating trace_ips (continuing without stack trace)");
+			mono_error_cleanup (error);
+			g_list_free (trace_ips_copy);
+			return;
+		}
+#else
 		mono_error_assert_ok (error);
+#endif
 		MONO_OBJECT_SETREF_INTERNAL (mono_ex, trace_ips, ips_arr);
 		MONO_OBJECT_SETREF_INTERNAL (mono_ex, native_trace_ips, build_native_trace (error));
+#ifdef __NuttX__
+		if (!is_ok (error)) {
+			g_warning ("setup_stack_trace: OOM allocating native_trace_ips (continuing)");
+			mono_error_cleanup (error);
+		}
+#else
 		mono_error_assert_ok (error);
+#endif
 		if (*dynamic_methods) {
 			/* These methods could go away anytime, so save a reference to them in the exception object */
 			int methods_len = g_slist_length (*dynamic_methods);

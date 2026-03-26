@@ -1570,7 +1570,7 @@ retry:
 static void
 build_args_from_sig (InterpMethodArguments *margs, MonoMethodSignature *sig, BuildArgsFromSigInfo *info, InterpFrame *frame)
 {
-#ifdef TARGET_WASM
+#if defined(TARGET_WASM) || defined(__NuttX__)
 	margs->sig = sig;
 #endif
 
@@ -1751,7 +1751,7 @@ interp_to_native_trampoline (gpointer addr, gpointer ccontext)
 	get_interp_to_native_trampoline () (addr, ccontext);
 }
 
-#ifdef HOST_WASM
+#if defined(HOST_WASM) || defined(__NuttX__)
 typedef struct {
 	MonoPIFunc entry_func;
 	BuildArgsFromSigInfo *call_info;
@@ -1787,7 +1787,7 @@ ves_pinvoke_method (
 
 	MONO_REQ_GC_UNSAFE_MODE;
 
-#ifdef HOST_WASM
+#if defined(HOST_WASM) || defined(__NuttX__)
 	/*
 	 * Use a per-signature entry function.
 	 * Cache it in imethod->data_items.
@@ -1797,7 +1797,11 @@ ves_pinvoke_method (
 	WasmPInvokeCacheData *cache_data = (WasmPInvokeCacheData*)*cache;
 	if (!cache_data) {
 		cache_data = g_new0 (WasmPInvokeCacheData, 1);
+#ifdef HOST_WASM
 		cache_data->entry_func = (MonoPIFunc)mono_wasm_get_interp_to_native_trampoline (sig);
+#else
+		cache_data->entry_func = (MonoPIFunc)mono_nuttx_get_interp_to_native_trampoline (sig);
+#endif
 		cache_data->call_info = get_build_args_from_sig_info (get_default_mem_manager (), sig);
 		mono_memory_barrier ();
 		*cache = cache_data;
@@ -1836,7 +1840,7 @@ ves_pinvoke_method (
 	args = &ccontext;
 #else
 
-#ifdef HOST_WASM
+#if defined(HOST_WASM) || defined(__NuttX__)
 	BuildArgsFromSigInfo *call_info = cache_data->call_info;
 #else
 	BuildArgsFromSigInfo *call_info = NULL;
@@ -2229,6 +2233,19 @@ dump_args (InterpFrame *inv)
 static MONO_NEVER_INLINE MonoObject*
 interp_runtime_invoke (MonoMethod *method, void *obj, void **params, MonoObject **exc, MonoError *error)
 {
+#ifdef __NuttX__
+	static int nuttx_invoke_depth = 0;
+	static int nuttx_invoke_max_depth = 0;
+	nuttx_invoke_depth++;
+	if (nuttx_invoke_depth > nuttx_invoke_max_depth) {
+		nuttx_invoke_max_depth = nuttx_invoke_depth;
+		if (nuttx_invoke_max_depth <= 10 || nuttx_invoke_max_depth % 20 == 0) {
+			g_warning ("interp_runtime_invoke depth=%d method=%s",
+				nuttx_invoke_depth,
+				method ? mono_method_full_name (method, TRUE) : "?");
+		}
+	}
+#endif
 	ThreadContext *context = get_context ();
 	MonoMethodSignature *sig = mono_method_signature_internal (method);
 	stackval *sp = (stackval*)context->stack_pointer;
@@ -2280,8 +2297,14 @@ interp_runtime_invoke (MonoMethod *method, void *obj, void **params, MonoObject 
 		 */
 		if (mono_aot_mode == MONO_AOT_MODE_LLVMONLY_INTERP)
 			mono_llvm_start_native_unwind ();
+#ifdef __NuttX__
+		nuttx_invoke_depth--;
+#endif
 		return NULL;
 	}
+#ifdef __NuttX__
+	nuttx_invoke_depth--;
+#endif
 	// The return value is at the bottom of the stack
 	return frame.stack->data.o;
 }
@@ -3547,6 +3570,26 @@ interp_create_method_pointer (MonoMethod *method, gboolean compile, MonoError *e
 		g_free (msg);
 		return NULL;
 	}
+#elif defined(__NuttX__)
+	{
+		/*
+		 * NuttX: allocate a native-to-interp thunk from the pre-compiled
+		 * thunk pool.  Each thunk is a unique function pointer that saves
+		 * ARM registers into a CallContext, then calls
+		 * interp_entry_from_trampoline(ccontext, imethod).
+		 */
+		MonoFtnDesc *ftndesc = g_new0 (MonoFtnDesc, 1);
+		ftndesc->addr = (gpointer)interp_entry_from_trampoline;
+		ftndesc->arg = imethod;
+
+		addr = mono_nuttx_get_native_to_interp_trampoline (method, ftndesc);
+		if (addr) {
+			mono_memory_barrier ();
+			imethod->jit_entry = addr;
+			return addr;
+		}
+		/* Pool exhausted — fall through to error */
+	}
 #endif
 	return (gpointer)interp_no_native_to_managed;
 #endif
@@ -4271,6 +4314,13 @@ main_loop:
 			 */
 			context->stack_pointer = (guchar*)frame->stack + new_method->alloca_size;
 			if (G_UNLIKELY (context->stack_pointer >= context->stack_end)) {
+#ifdef __NuttX__
+				g_warning ("INTERP STACK OVERFLOW (inline): method=%s alloca=%u stack_used=%d/%d",
+					new_method->method ? mono_method_full_name (new_method->method, TRUE) : "?",
+					new_method->alloca_size,
+					(int)(context->stack_pointer - context->stack_start),
+					INTERP_STACK_SIZE);
+#endif
 				context->stack_end = context->stack_real_end;
 				THROW_EX (mono_domain_get ()->stack_overflow_ex, ip);
 			}
@@ -4549,6 +4599,30 @@ interp_call:
 			context->stack_pointer = (guchar*)frame->stack + cmethod->alloca_size;
 
 			if (G_UNLIKELY (context->stack_pointer >= context->stack_end)) {
+#ifdef __NuttX__
+				g_warning ("INTERP STACK OVERFLOW (call): method=%s alloca=%u stack_used=%d/%d",
+					cmethod->method ? mono_method_full_name (cmethod->method, TRUE) : "?",
+					cmethod->alloca_size,
+					(int)(context->stack_pointer - context->stack_start),
+					INTERP_STACK_SIZE);
+				/* Dump caller chain - last 40 frames from bottom of stack */
+				{
+					InterpFrame *f = frame;
+					int total = 0;
+					while (f) { total++; f = f->parent; }
+					g_warning ("  total frame depth: %d", total);
+					/* Print last 40 frames (deepest/oldest) */
+					f = frame;
+					int skip = total > 40 ? total - 40 : 0;
+					int idx = 0;
+					while (f) {
+						if (idx >= skip && f->imethod && f->imethod->method)
+							g_warning ("  frame[%d]: %s", idx, mono_method_full_name (f->imethod->method, TRUE));
+						f = f->parent;
+						idx++;
+					}
+				}
+#endif
 				context->stack_end = context->stack_real_end;
 				THROW_EX (mono_domain_get ()->stack_overflow_ex, ip);
 			}
