@@ -2270,6 +2270,20 @@ mono_class_from_mono_type_internal (MonoType *type)
 		return m_type_data_get_klass_unchecked (type) ? m_type_data_get_klass_unchecked (type) : default_expr;
 
 	g_assert (type);
+#ifdef __NuttX__
+	if (type->type == 0) {
+		/* MONO_TYPE_END — should not happen now that nuttx_resolve_qcall_type
+		 * recovers the real MonoType* at the icall level.  If this fires,
+		 * there is a new code path that needs the QCallTypeHandle fix.
+		 */
+		guint32 bitfields = *(guint32*)((char*)type + 4);
+		g_warning ("mono_class_from_mono_type_internal: UNRECOVERED MONO_TYPE_END "
+			"at type=%p, data.klass=%p, word@4=0x%08x, caller=%p\n",
+			(void *)type, (void *)type->data__.klass, bitfields,
+			__builtin_return_address(0));
+		return mono_defaults.object_class;
+	}
+#endif
 	switch (type->type) {
 	CASE_KLASS_OR_DEFAULT_FOR_TYPE(MONO_TYPE_OBJECT, mono_defaults.object_class);
 	CASE_KLASS_OR_DEFAULT_FOR_TYPE(MONO_TYPE_VOID, mono_defaults.void_class);
@@ -2306,7 +2320,8 @@ mono_class_from_mono_type_internal (MonoType *type)
 	case MONO_TYPE_VAR:
 		return mono_class_create_generic_parameter (m_type_data_get_generic_param_unchecked (type));
 	default:
-		g_warning ("mono_class_from_mono_type_internal: implement me 0x%02x\n", type->type);
+		g_warning ("mono_class_from_mono_type_internal: implement me 0x%02x, type=%p, caller=%p\n",
+			type->type, (void *)type, __builtin_return_address(0));
 		g_assert_not_reached ();
 	}
 

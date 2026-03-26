@@ -658,6 +658,18 @@ mono_monitor_ensure_owned (LockWord lw, guint32 id)
 			return TRUE;
 	}
 
+#ifdef __NuttX__
+	{
+		static int nuttx_monitor_fail_count = 0;
+		if (nuttx_monitor_fail_count < 5) {
+			nuttx_monitor_fail_count++;
+			g_warning ("monitor_ensure_owned FAIL: lw=0x%08x id=%u is_flat=%d is_inflated=%d is_free=%d owner=%d",
+				(unsigned)lw.lock_word, id,
+				lock_word_is_flat(lw), lock_word_is_inflated(lw),
+				lock_word_is_free(lw), lock_word_get_owner(lw));
+		}
+	}
+#endif
 	ERROR_DECL (error);
 	mono_error_set_synchronization_lock (error, "Object synchronization method was called from an unsynchronized block of code.");
 	mono_error_set_pending_exception (error);

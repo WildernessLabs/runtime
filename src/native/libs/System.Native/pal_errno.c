@@ -25,5 +25,9 @@ int32_t SystemNative_GetErrNo(void)
 
 void SystemNative_SetErrNo(int32_t errorCode)
 {
+#ifdef __NuttX__
+    set_errno(errorCode);
+#else
     errno = errorCode;
+#endif
 }

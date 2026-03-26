@@ -32,7 +32,15 @@
 #define MINT_SIMD_ALIGNMENT (MINT_STACK_ALIGNMENT)
 #define SIZEOF_V128 16
 
+#ifdef __NuttX__
+/* NuttX/ARM32: each thread entering the interpreter gets its own stack.
+ * With 5+ managed threads (main, finalizer, threadpool, timer, etc.),
+ * 1MB each exhausts 32MB SDRAM. 256KB per thread is sufficient for
+ * typical Meadow workloads and allows many concurrent threads. */
+#define INTERP_STACK_SIZE (256*1024)
+#else
 #define INTERP_STACK_SIZE (1024*1024)
+#endif
 #define INTERP_REDZONE_SIZE (8*1024)
 
 enum {

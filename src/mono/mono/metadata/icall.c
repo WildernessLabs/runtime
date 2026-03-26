@@ -1786,12 +1786,72 @@ typedef enum {
 	TYPECODE_STRING = 18
 } TypeCode;
 
+#ifdef __NuttX__
+/*
+ * NuttX QCallTypeHandle workaround:
+ * On the Mono interpreter + ARM32, QCallTypeHandle.type sometimes contains
+ * the field ADDRESS (ptr+8) instead of the field VALUE (MonoType*).
+ * Detect this by checking type->type == 0 (MONO_TYPE_END) and recover
+ * the real MonoType* from the MonoReflectionType object at _ptr.
+ *
+ * _ptr points to the MonoReflectionType (RuntimeType) object on the
+ * managed heap.  Its layout: { MonoObject (8 bytes), MonoType *type, ... }.
+ * So the real MonoType* is at *(MonoType**)((char*)_ptr + 8).
+ */
+static MonoType *
+nuttx_resolve_qcall_type (MonoQCallTypeHandle *th)
+{
+	MonoType *t = th->type;
+	if (t && t->type != 0)
+		return t;
+
+	/* Try to recover from _ptr (MonoReflectionType*) */
+	if (th->_ptr) {
+		MonoReflectionType *rtype = (MonoReflectionType *)th->_ptr;
+		MonoType *recovered = rtype->type;
+		if (recovered && recovered->type != 0) {
+			g_warning ("nuttx_resolve_qcall_type: recovered type=%p (type_enum=%d) "
+				"from _ptr=%p (was type=%p type_enum=%d)\n",
+				(void *)recovered, recovered->type,
+				th->_ptr, (void *)t, t ? t->type : -1);
+			return recovered;
+		}
+
+		/* _ptr might be a ref (pointer to object pointer) */
+		MonoReflectionType *rtype2 = *(MonoReflectionType **)th->_ptr;
+		if (rtype2 && rtype2->type && rtype2->type->type != 0) {
+			g_warning ("nuttx_resolve_qcall_type: recovered type=%p (type_enum=%d) "
+				"via deref _ptr=%p -> %p\n",
+				(void *)rtype2->type, rtype2->type->type,
+				th->_ptr, (void *)rtype2);
+			return rtype2->type;
+		}
+
+		g_warning ("nuttx_resolve_qcall_type: FAILED _ptr=%p, type=%p, "
+			"rtype->type=%p, *(void**)_ptr=%p\n",
+			th->_ptr, (void *)t,
+			(void *)(rtype ? rtype->type : NULL),
+			*(void **)th->_ptr);
+	}
+
+	return t; /* Fall through to existing error handling */
+}
+#endif
+
 MonoBoolean
 ves_icall_RuntimeTypeHandle_type_is_assignable_from (MonoQCallTypeHandle type_handle, MonoQCallTypeHandle c_handle, MonoError *error)
 {
+#ifdef __NuttX__
+	MonoType *type = nuttx_resolve_qcall_type (&type_handle);
+#else
 	MonoType *type = type_handle.type;
+#endif
 	MonoClass *klass = mono_class_from_mono_type_internal (type);
+#ifdef __NuttX__
+	MonoType *ctype = nuttx_resolve_qcall_type (&c_handle);
+#else
 	MonoType *ctype = c_handle.type;
+#endif
 	MonoClass *klassc = mono_class_from_mono_type_internal (ctype);
 
 	if (m_type_is_byref (type) ^ m_type_is_byref (ctype))
@@ -1910,7 +1970,11 @@ ves_icall_RuntimeMethodHandle_ReboxFromNullable (MonoObjectHandle obj, MonoObjec
 guint32
 ves_icall_RuntimeTypeHandle_GetAttributes (MonoQCallTypeHandle type_handle)
 {
+#ifdef __NuttX__
+	MonoType *type = nuttx_resolve_qcall_type (&type_handle);
+#else
 	MonoType *type = type_handle.type;
+#endif
 
 	if (m_type_is_byref (type) || type->type == MONO_TYPE_PTR || type->type == MONO_TYPE_FNPTR)
 		return TYPE_ATTRIBUTE_PUBLIC;
@@ -1922,7 +1986,11 @@ ves_icall_RuntimeTypeHandle_GetAttributes (MonoQCallTypeHandle type_handle)
 guint32
 ves_icall_RuntimeTypeHandle_GetMetadataToken (MonoQCallTypeHandle type_handle, MonoError *error)
 {
+#ifdef __NuttX__
+	MonoType *type = nuttx_resolve_qcall_type (&type_handle);
+#else
 	MonoType *type = type_handle.type;
+#endif
 
 	if (type->type == MONO_TYPE_FNPTR)
 		return MONO_TOKEN_TYPE_DEF; // coreCLR expects 0x02000000 as the metadata token value for function pointers
@@ -2666,7 +2734,11 @@ get_interfaces_hash (gconstpointer v1)
 void
 ves_icall_RuntimeType_GetInterfaces (MonoQCallTypeHandle type_handle, MonoObjectHandleOnStack res, MonoError *error)
 {
+#ifdef __NuttX__
+	MonoType *type = nuttx_resolve_qcall_type (&type_handle);
+#else
 	MonoType *type = type_handle.type;
+#endif
 	MonoClass *klass = mono_class_from_mono_type_internal (type);
 
 	GHashTable *iface_hash = g_hash_table_new (get_interfaces_hash, NULL);
@@ -2848,7 +2920,11 @@ ves_icall_RuntimeType_GetInterfaceMapData (MonoQCallTypeHandle type_handle, Mono
 void
 ves_icall_RuntimeType_GetPacking (MonoQCallTypeHandle type_handle, guint32 *packing, guint32 *size, MonoError *error)
 {
+#ifdef __NuttX__
+	MonoType *type = nuttx_resolve_qcall_type (&type_handle);
+#else
 	MonoType *type = type_handle.type;
+#endif
 	MonoClass *klass = mono_class_from_mono_type_internal (type);
 
 	mono_class_init_checked (klass, error);
@@ -2886,7 +2962,11 @@ ves_icall_RuntimeType_IsUnmanagedFunctionPointerInternal (MonoQCallTypeHandle ty
 void
 ves_icall_RuntimeTypeHandle_GetElementType (MonoQCallTypeHandle type_handle, MonoObjectHandleOnStack res, MonoError *error)
 {
+#ifdef __NuttX__
+	MonoType *type = nuttx_resolve_qcall_type (&type_handle);
+#else
 	MonoType *type = type_handle.type;
+#endif
 
 	if (!m_type_is_byref (type) && type->type == MONO_TYPE_SZARRAY) {
 		HANDLE_ON_STACK_SET (res, mono_type_get_object_checked (m_class_get_byval_arg (m_type_data_get_klass_unchecked (type)), error));
@@ -2912,7 +2992,11 @@ ves_icall_RuntimeTypeHandle_GetElementType (MonoQCallTypeHandle type_handle, Mon
 void
 ves_icall_RuntimeType_GetParentType (MonoQCallTypeHandle type_handle, MonoObjectHandleOnStack res, MonoError *error)
 {
+#ifdef __NuttX__
+	MonoType *type = nuttx_resolve_qcall_type (&type_handle);
+#else
 	MonoType *type = type_handle.type;
+#endif
 
 	if (m_type_is_byref (type))
 		return;
@@ -2927,7 +3011,11 @@ ves_icall_RuntimeType_GetParentType (MonoQCallTypeHandle type_handle, MonoObject
 guint32
 ves_icall_RuntimeTypeHandle_GetCorElementType (MonoQCallTypeHandle type_handle)
 {
+#ifdef __NuttX__
+	MonoType *type = nuttx_resolve_qcall_type (&type_handle);
+#else
 	MonoType *type = type_handle.type;
+#endif
 
 	// Enums in generic classes should still return VALUETYPE
 	if (type->type == MONO_TYPE_GENERICINST && m_class_is_enumtype (m_type_data_get_generic_class_unchecked (type)->container_class) && !m_type_is_byref (type))
@@ -2942,7 +3030,11 @@ ves_icall_RuntimeTypeHandle_GetCorElementType (MonoQCallTypeHandle type_handle)
 MonoBoolean
 ves_icall_RuntimeTypeHandle_HasReferences (MonoQCallTypeHandle type_handle, MonoError *error)
 {
+#ifdef __NuttX__
+	MonoType *type = nuttx_resolve_qcall_type (&type_handle);
+#else
 	MonoType *type = type_handle.type;
+#endif
 	MonoClass *klass;
 
 	klass = mono_class_from_mono_type_internal (type);
@@ -2953,7 +3045,11 @@ ves_icall_RuntimeTypeHandle_HasReferences (MonoQCallTypeHandle type_handle, Mono
 MonoBoolean
 ves_icall_RuntimeTypeHandle_IsByRefLike (MonoQCallTypeHandle type_handle, MonoError *error)
 {
+#ifdef __NuttX__
+	MonoType *type = nuttx_resolve_qcall_type (&type_handle);
+#else
 	MonoType *type = type_handle.type;
+#endif
 
 	/* .NET Core says byref types are not IsByRefLike */
 	if (m_type_is_byref (type))
@@ -2996,7 +3092,11 @@ ves_icall_RuntimeType_GetFunctionPointerTypeModifiers (MonoQCallTypeHandle type_
 void
 ves_icall_InvokeClassConstructor (MonoQCallTypeHandle type_handle, MonoError *error)
 {
+#ifdef __NuttX__
+	MonoType *type = nuttx_resolve_qcall_type (&type_handle);
+#else
 	MonoType *type = type_handle.type;
+#endif
 	MonoClass *klass = mono_class_from_mono_type_internal (type);
 
 	MonoVTable *vtable = mono_class_vtable_checked (klass, error);
@@ -3014,7 +3114,11 @@ ves_icall_reflection_get_token (MonoObjectHandle obj, MonoError *error)
 void
 ves_icall_RuntimeTypeHandle_GetModule (MonoQCallTypeHandle type_handle, MonoObjectHandleOnStack res, MonoError *error)
 {
+#ifdef __NuttX__
+	MonoType *t = nuttx_resolve_qcall_type (&type_handle);
+#else
 	MonoType *t = type_handle.type;
+#endif
 	MonoClass *klass = mono_class_from_mono_type_internal (t);
 
 	MonoReflectionModuleHandle module;
@@ -3027,14 +3131,22 @@ ves_icall_RuntimeTypeHandle_GetModule (MonoQCallTypeHandle type_handle, MonoObje
 gpointer
 ves_icall_RuntimeTypeHandle_GetMonoClass (MonoQCallTypeHandle type_handle, MonoError *error)
 {
+#ifdef __NuttX__
+	MonoType *t = nuttx_resolve_qcall_type (&type_handle);
+#else
 	MonoType *t = type_handle.type;
+#endif
 	return mono_class_from_mono_type_internal (t);
 }
 
 void
 ves_icall_RuntimeTypeHandle_GetAssembly (MonoQCallTypeHandle type_handle, MonoObjectHandleOnStack res, MonoError *error)
 {
+#ifdef __NuttX__
+	MonoType *t = nuttx_resolve_qcall_type (&type_handle);
+#else
 	MonoType *t = type_handle.type;
+#endif
 	MonoClass *klass = mono_class_from_mono_type_internal (t);
 
 	MonoReflectionAssemblyHandle assembly;
@@ -3047,7 +3159,11 @@ ves_icall_RuntimeTypeHandle_GetAssembly (MonoQCallTypeHandle type_handle, MonoOb
 void
 ves_icall_RuntimeType_GetDeclaringType (MonoQCallTypeHandle type_handle, MonoObjectHandleOnStack res, MonoError *error)
 {
+#ifdef __NuttX__
+	MonoType *type = nuttx_resolve_qcall_type (&type_handle);
+#else
 	MonoType *type = type_handle.type;
+#endif
 	MonoClass *klass;
 
 	if (m_type_is_byref (type))
@@ -3071,7 +3187,11 @@ ves_icall_RuntimeType_GetDeclaringType (MonoQCallTypeHandle type_handle, MonoObj
 void
 ves_icall_RuntimeType_GetName (MonoQCallTypeHandle type_handle, MonoObjectHandleOnStack res, MonoError *error)
 {
+#ifdef __NuttX__
+	MonoType *type = nuttx_resolve_qcall_type (&type_handle);
+#else
 	MonoType *type = type_handle.type;
+#endif
 	MonoClass *klass = mono_class_from_mono_type_internal (type);
 	// FIXME: this should be escaped in some scenarios with mono_identifier_escape_type_name_chars
 	// Determining exactly when to do so is fairly difficult, so for now we don't bother to avoid regressions
@@ -3090,7 +3210,11 @@ ves_icall_RuntimeType_GetName (MonoQCallTypeHandle type_handle, MonoObjectHandle
 void
 ves_icall_RuntimeType_GetNamespace (MonoQCallTypeHandle type_handle, MonoObjectHandleOnStack res, MonoError *error)
 {
+#ifdef __NuttX__
+	MonoType *type = nuttx_resolve_qcall_type (&type_handle);
+#else
 	MonoType *type = type_handle.type;
+#endif
 	if (type->type == MONO_TYPE_FNPTR)
 		return;
 
@@ -3150,7 +3274,11 @@ leave:
 void
 ves_icall_RuntimeType_GetGenericArgumentsInternal (MonoQCallTypeHandle type_handle, MonoObjectHandleOnStack res_handle, MonoBoolean runtimeTypeArray, MonoError *error)
 {
+#ifdef __NuttX__
+	MonoType *type = nuttx_resolve_qcall_type (&type_handle);
+#else
 	MonoType *type = type_handle.type;
+#endif
 	MonoClass *klass = mono_class_from_mono_type_internal (type);
 
 	MonoArrayHandle res = MONO_HANDLE_NEW (MonoArray, NULL);
@@ -3181,7 +3309,11 @@ ves_icall_RuntimeType_GetGenericArgumentsInternal (MonoQCallTypeHandle type_hand
 MonoBoolean
 ves_icall_RuntimeTypeHandle_IsGenericTypeDefinition (MonoQCallTypeHandle type_handle)
 {
+#ifdef __NuttX__
+	MonoType *type = nuttx_resolve_qcall_type (&type_handle);
+#else
 	MonoType *type = type_handle.type;
+#endif
 	if (m_type_is_byref (type))
 		return FALSE;
 
@@ -3257,7 +3389,11 @@ ves_icall_RuntimeTypeHandle_HasInstantiation (MonoQCallTypeHandle type_handle)
 {
 	MonoClass *klass;
 
+#ifdef __NuttX__
+	MonoType *type = nuttx_resolve_qcall_type (&type_handle);
+#else
 	MonoType *type = type_handle.type;
+#endif
 	if (m_type_is_byref (type))
 		return FALSE;
 
@@ -3769,7 +3905,12 @@ ves_icall_System_Enum_InternalGetUnderlyingType (MonoQCallTypeHandle type_handle
 	MonoType *etype;
 	MonoClass *klass;
 
-	klass = mono_class_from_mono_type_internal (type_handle.type);
+#ifdef __NuttX__
+	MonoType *type = nuttx_resolve_qcall_type (&type_handle);
+#else
+	MonoType *type = type_handle.type;
+#endif
+	klass = mono_class_from_mono_type_internal (type);
 	mono_class_init_checked (klass, error);
 	return_if_nok (error);
 
@@ -3785,7 +3926,12 @@ ves_icall_System_Enum_InternalGetUnderlyingType (MonoQCallTypeHandle type_handle
 int
 ves_icall_System_Enum_InternalGetCorElementType (MonoQCallTypeHandle type_handle)
 {
-	MonoClass *klass = mono_class_from_mono_type_internal (type_handle.type);
+#ifdef __NuttX__
+	MonoType *type = nuttx_resolve_qcall_type (&type_handle);
+#else
+	MonoType *type = type_handle.type;
+#endif
+	MonoClass *klass = mono_class_from_mono_type_internal (type);
 
 	return (int)m_class_get_byval_arg (m_class_get_element_class (klass))->type;
 }
@@ -3883,7 +4029,11 @@ enum {
 GPtrArray*
 ves_icall_RuntimeType_GetFields_native (MonoQCallTypeHandle type_handle, char *utf8_name, guint32 bflags, guint32 mlisttype, MonoError *error)
 {
+#ifdef __NuttX__
+	MonoType *type = nuttx_resolve_qcall_type (&type_handle);
+#else
 	MonoType *type = type_handle.type;
+#endif
 
 	if (m_type_is_byref (type))
 		return g_ptr_array_new ();
@@ -4073,7 +4223,11 @@ loader_error:
 GPtrArray*
 ves_icall_RuntimeType_GetMethodsByName_native (MonoQCallTypeHandle type_handle, const char *mname, guint32 bflags, guint32 mlisttype, MonoError *error)
 {
+#ifdef __NuttX__
+	MonoType *type = nuttx_resolve_qcall_type (&type_handle);
+#else
 	MonoType *type = type_handle.type;
+#endif
 
 	MonoClass *klass = mono_class_from_mono_type_internal (type);
 	if (m_type_is_byref (type))
@@ -4085,7 +4239,11 @@ ves_icall_RuntimeType_GetMethodsByName_native (MonoQCallTypeHandle type_handle, 
 GPtrArray*
 ves_icall_RuntimeType_GetConstructors_native (MonoQCallTypeHandle type_handle, guint32 bflags, MonoError *error)
 {
+#ifdef __NuttX__
+	MonoType *type = nuttx_resolve_qcall_type (&type_handle);
+#else
 	MonoType *type = type_handle.type;
+#endif
 	if (m_type_is_byref (type)) {
 		return g_ptr_array_new ();
 	}
@@ -5167,7 +5325,11 @@ void
 ves_icall_System_RuntimeType_getFullName (MonoQCallTypeHandle type_handle, MonoObjectHandleOnStack res, MonoBoolean full_name,
 										  MonoBoolean assembly_qualified, MonoError *error)
 {
+#ifdef __NuttX__
+	MonoType *type = nuttx_resolve_qcall_type (&type_handle);
+#else
 	MonoType *type = type_handle.type;
+#endif
 	MonoTypeNameFormat format;
 	gchar *name;
 

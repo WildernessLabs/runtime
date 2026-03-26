@@ -2571,7 +2571,7 @@ GSList *mono_arch_get_trampolines               (gboolean aot);
 gpointer mono_arch_get_interp_to_native_trampoline (MonoTrampInfo **info);
 gpointer mono_arch_get_native_to_interp_trampoline (MonoTrampInfo **info);
 
-#ifdef MONO_ARCH_HAVE_INTERP_PINVOKE_TRAMP
+#if defined(MONO_ARCH_HAVE_INTERP_PINVOKE_TRAMP) || defined(MONO_ARCH_HAVE_INTERP_ENTRY_TRAMPOLINE)
 /* Return an arch specific structure with precomputed information for pinvoke calls with signature SIG */
 gpointer mono_arch_get_interp_native_call_info (MonoMemoryManager *mem_manager, MonoMethodSignature *sig);
 // Moves data (arguments and return vt address) from the InterpFrame to the CallContext so a pinvoke call can be made.

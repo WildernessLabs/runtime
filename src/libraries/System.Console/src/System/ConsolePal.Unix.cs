@@ -875,15 +875,26 @@ namespace System
         /// <summary>Ensures that the console has been initialized for use.</summary>
         internal static void EnsureConsoleInitialized()
         {
-            if (!s_initialized)
-            {
-                EnsureInitializedCore(); // factored out for inlinability
-            }
+            // NuttX: skip all terminal/signal initialization.
+            // ConsolePal.EnsureInitializedCore() crashes in the Mono interpreter
+            // due to re-entrant Monitor.Enter during the first Console.Write.
+            // This is safe because NuttX has no terminal, no signals, and the
+            // output path (fd 1 → HCOM FIFO) requires no initialization.
+            s_initialized = true;
         }
 
         /// <summary>Ensures that the console has been initialized for use.</summary>
         private static unsafe void EnsureInitializedCore()
         {
+            // NuttX has no terminal — skip signal/terminfo/keypad initialization entirely.
+            // The lock(Console.Out) path itself can crash in the Mono interpreter when the
+            // synchronized wrapper's Monitor is already held re-entrantly during the first write.
+            if (Environment.GetEnvironmentVariable("DOTNET_SYSTEM_CONSOLE_SKIP_TERMINAL_INIT") == "1")
+            {
+                s_initialized = true;
+                return;
+            }
+
             lock (Console.Out) // ensure that writing the ANSI string and setting initialized to true are done atomically
             {
                 if (!s_initialized)
@@ -968,10 +979,12 @@ namespace System
         {
             EnsureConsoleInitialized();
 
-            lock (Console.Out) // synchronize with other writers
-            {
-                Write(fd, buffer);
-            }
+            // NuttX: skip lock(Console.Out) — the re-entrant Monitor.Enter on the
+            // SyncTextWriter crashes in the Mono interpreter.  On NuttX the write
+            // target is a FIFO (small, atomic writes) so synchronization isn't needed.
+            // Also skip cursor position tracking (mayChangeCursorPosition=false)
+            // because UpdatedCachedCursorPosition also uses lock(Console.Out).
+            Write(fd, buffer, mayChangeCursorPosition: false);
         }
 
         /// <summary>Writes data from the buffer into the file descriptor.</summary>

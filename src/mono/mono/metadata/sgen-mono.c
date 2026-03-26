@@ -2193,7 +2193,15 @@ mono_gc_set_stack_end (void *stack_end)
 	LOCK_GC;
 	info = mono_thread_info_current ();
 	if (info) {
+#ifdef __NuttX__
+		/* NuttX/ARM32: task stacks are in SDRAM and initial stack_end may be
+		 * recorded incorrectly (e.g. from SRAM-based probe). Allow any update. */
+		if (stack_end >= info->client_info.info.stack_end)
+			g_warning ("mono_gc_set_stack_end: new=%p >= old=%p (NuttX, allowing)",
+				stack_end, info->client_info.info.stack_end);
+#else
 		SGEN_ASSERT (0, stack_end < info->client_info.info.stack_end, "Can only lower stack end");
+#endif
 		info->client_info.info.stack_end = stack_end;
 	}
 	UNLOCK_GC;
