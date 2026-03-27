@@ -963,5 +963,14 @@ add_subdirectory("${CLR_SRC_NATIVE_DIR}/public" public_apis)
 
 add_subdirectory(mono)
 
+# Build System.Native static library for NuttX (skip configure.cmake —
+# use hand-written pal_config.h since we can't run feature tests on target)
+if(HOST_NUTTX)
+  set(STATIC_LIBS_ONLY 1)
+  set(GEN_SHARED_LIB 0)
+  set(STATIC_LIB_DESTINATION lib)
+  add_subdirectory("${CLR_SRC_NATIVE_DIR}/libs/System.Native" system_native)
+endif()
+
 configure_file(cmake/config.h.in config.h)
 configure_file(cmake/eglib-config.h.cmake.in mono/eglib/eglib-config.h)

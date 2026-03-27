@@ -14,6 +14,7 @@
 #define TARGET_UNIX 1
 #endif
 
+
 /* ------------------------------------------------------------------ */
 /* File I/O features                                                   */
 /* ------------------------------------------------------------------ */
@@ -65,7 +66,7 @@
 /* ------------------------------------------------------------------ */
 /* File manipulation                                                   */
 /* ------------------------------------------------------------------ */
-#define HAVE_CHMOD                  1
+#define HAVE_CHMOD                  0  /* NuttX has no chmod() */
 #define HAVE_FCHMOD                 0  /* NuttX may not have fchmod */
 #define HAVE_PIPE                   1
 #define HAVE_PIPE2                  0  /* NuttX has pipe but not pipe2 */
@@ -119,7 +120,7 @@
 #define HAVE_PTHREAD_H              1
 
 /* ------------------------------------------------------------------ */
-/* Networking (most disabled — not needed for Track 07)                */
+/* Networking                                                          */
 /* ------------------------------------------------------------------ */
 #define HAVE_GETIFADDRS             0
 #define HAVE_UTSNAME_DOMAINNAME     0
@@ -130,9 +131,9 @@
 #define HAVE_SENDFILE_4             0
 #define HAVE_SENDFILE_6             0
 #define HAVE_SENDFILE_7             0
-#define HAVE_SOCKADDR_UN_SUN_PATH   0
+#define HAVE_SOCKADDR_UN_SUN_PATH   1  /* NuttX has sun_path in sockaddr_un */
 #define HAVE_SUPPORT_FOR_DUAL_MODE_IPV4_PACKET_INFO 0
-#define HAVE_IN_PKTINFO             0
+#define HAVE_IN_PKTINFO             1  /* NuttX has struct in_pktinfo */
 #define HAVE_IP_MREQN               0
 #define HAVE_IP_MULTICAST_IFINDEX   0
 #define HAVE_KQUEUE                 0
@@ -151,7 +152,7 @@
 #define HAVE_TCP_H_TCP_KEEPALIVE    0
 #define HAVE_SYS_SOCKIO_H          0
 #define HAVE_ETHTOOL_H             0
-#define HAVE_SYS_POLL_H            1
+#define HAVE_SYS_POLL_H            0  /* NuttX has poll.h, not sys/poll.h */
 #define HAVE_NETPACKET_PACKET_H    0
 #define HAVE_NET_IF_ARP_H          0
 #define HAVE_NET_IFMEDIA_H         0

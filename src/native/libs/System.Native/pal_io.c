@@ -12,15 +12,23 @@
 #include <assert.h>
 #include <fcntl.h>
 #include <errno.h>
+#ifdef __NuttX__
+#include "pal_io_nuttx.h"
+#else
 #include <fnmatch.h>
+#endif
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
+#ifndef __NuttX__
 #include <sys/mman.h>
+#endif
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <sys/types.h>
+#ifndef __NuttX__
 #include <sys/file.h>
+#endif
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 #if !HAVE_MAKEDEV_FILEH && HAVE_MAKEDEV_SYSMACROSH
@@ -134,16 +142,20 @@ c_static_assert(PAL_S_ISGID == S_ISGID);
 // are common to our current targets.  If these static asserts fail,
 // ConvertFileStatus needs to be updated to twiddle mode bits
 // accordingly.
-#if !defined(TARGET_WASI)
+// NuttX uses non-standard S_IF* bit positions — mode conversion
+// is handled by nuttx_mode_to_posix() in pal_io_nuttx.h.
+#if !defined(TARGET_WASI) && !defined(__NuttX__)
 c_static_assert(PAL_S_IFMT == S_IFMT);
 c_static_assert(PAL_S_IFIFO == S_IFIFO);
-#endif /* TARGET_WASI */
+#endif /* TARGET_WASI && __NuttX__ */
+#if !defined(__NuttX__)
 c_static_assert(PAL_S_IFBLK == S_IFBLK);
 c_static_assert(PAL_S_IFCHR == S_IFCHR);
 c_static_assert(PAL_S_IFDIR == S_IFDIR);
 c_static_assert(PAL_S_IFREG == S_IFREG);
 c_static_assert(PAL_S_IFLNK == S_IFLNK);
 c_static_assert(PAL_S_IFSOCK == S_IFSOCK);
+#endif
 
 // Validate that our enum for inode types is the same as what is
 // declared by the dirent.h header on the local system.
@@ -151,7 +163,8 @@ c_static_assert(PAL_S_IFSOCK == S_IFSOCK);
 // WebAssembly (BROWSER) has dirent d_type but is not correct
 // by returning UNKNOWN the managed code properly stats the file
 // to detect if entry is directory or not.
-#if (defined(DT_UNKNOWN) || defined(TARGET_WASM)) && !defined(TARGET_WASI)
+// NuttX DT_* values are defined in pal_io_nuttx.h to match PAL values.
+#if (defined(DT_UNKNOWN) || defined(TARGET_WASM)) && !defined(TARGET_WASI) && !defined(__NuttX__)
 c_static_assert((int)PAL_DT_UNKNOWN == (int)DT_UNKNOWN);
 c_static_assert((int)PAL_DT_FIFO == (int)DT_FIFO);
 c_static_assert((int)PAL_DT_CHR == (int)DT_CHR);
@@ -203,6 +216,27 @@ c_static_assert(PAL_IN_ISDIR == IN_ISDIR);
 
 static void ConvertFileStatus(const struct stat_* src, FileStatus* dst)
 {
+#ifdef __NuttX__
+    /* NuttX struct stat is minimal — no st_dev, st_rdev, st_ino, st_uid,
+     * st_gid, no nanosecond timestamps, no birthtime, no userflags. */
+    dst->Dev = 0;
+    dst->RDev = 0;
+    dst->Ino = 0;
+    dst->Flags = FILESTATUS_FLAGS_NONE;
+    dst->Mode = nuttx_mode_to_posix((int32_t)src->st_mode);
+    dst->Uid = 0;
+    dst->Gid = 0;
+    dst->Size = src->st_size;
+    dst->ATime = src->st_atime;
+    dst->MTime = src->st_mtime;
+    dst->CTime = src->st_ctime;
+    dst->ATimeNsec = 0;
+    dst->MTimeNsec = 0;
+    dst->CTimeNsec = 0;
+    dst->BirthTime = 0;
+    dst->BirthTimeNsec = 0;
+    dst->UserFlags = 0;
+#else
     dst->Dev = (int64_t)src->st_dev;
     dst->RDev = (int64_t)src->st_rdev;
     dst->Ino = (int64_t)src->st_ino;
@@ -235,6 +269,7 @@ static void ConvertFileStatus(const struct stat_* src, FileStatus* dst)
 #else
     dst->UserFlags = 0;
 #endif
+#endif /* __NuttX__ */
 }
 
 int32_t SystemNative_Stat(const char* path, FileStatus* output)
@@ -496,6 +531,9 @@ static void ConvertDirent(const struct dirent* entry, DirectoryEntry* outputEntr
     // by returning UNKNOWN the managed code properly stats the file
     // to detect if entry is directory or not.
     outputEntry->InodeType = PAL_DT_UNKNOWN;
+#elif defined(__NuttX__)
+    // NuttX uses DTYPE_* bitmask values, not POSIX DT_* sequential values.
+    outputEntry->InodeType = nuttx_dtype_to_posix(entry->d_type);
 #else
     outputEntry->InodeType = (int32_t)entry->d_type;
 #endif
@@ -785,7 +823,10 @@ int32_t SystemNative_FSync(intptr_t fd)
 int32_t SystemNative_FLock(intptr_t fd, int32_t operation)
 {
     int32_t result;
-#if !defined(TARGET_WASI)
+#if defined(__NuttX__)
+    (void)fd; (void)operation;
+    result = 0; /* NuttX has no flock() — no-op */
+#elif !defined(TARGET_WASI)
     while ((result = flock(ToFileDescriptor(fd), operation)) < 0 && errno == EINTR);
 #else /* TARGET_WASI */
     result = EINTR;
@@ -826,21 +867,37 @@ int64_t SystemNative_LSeek(intptr_t fd, int64_t offset, int32_t whence)
 
 int32_t SystemNative_Link(const char* source, const char* linkTarget)
 {
+#ifdef __NuttX__
+    (void)source; (void)linkTarget;
+    errno = ENOTSUP;
+    return -1;
+#else
     int32_t result;
     while ((result = link(source, linkTarget)) < 0 && errno == EINTR);
     return result;
+#endif
 }
 
 int32_t SystemNative_SymLink(const char* target, const char* linkPath)
 {
+#ifdef __NuttX__
+    (void)target; (void)linkPath;
+    errno = ENOTSUP;
+    return -1;
+#else
     int32_t result;
     while ((result = symlink(target, linkPath)) < 0 && errno == EINTR);
     return result;
+#endif
 }
 
 void SystemNative_GetDeviceIdentifiers(uint64_t dev, uint32_t* majorNumber, uint32_t* minorNumber)
 {
-#if !defined(TARGET_WASI)
+#if defined(__NuttX__)
+    (void)dev;
+    *majorNumber = 0;
+    *minorNumber = 0;
+#elif !defined(TARGET_WASI)
     dev_t castedDev = (dev_t)dev;
 #if !defined(TARGET_HAIKU)
     *majorNumber = (uint32_t)major(castedDev);
@@ -859,7 +916,11 @@ void SystemNative_GetDeviceIdentifiers(uint64_t dev, uint32_t* majorNumber, uint
 
 int32_t SystemNative_MkNod(const char* pathName, uint32_t mode, uint32_t major, uint32_t minor)
 {
-#if !defined(TARGET_WASI)
+#if defined(__NuttX__)
+    (void)pathName; (void)mode; (void)major; (void)minor;
+    errno = ENOTSUP;
+    return -1;
+#elif !defined(TARGET_WASI)
 #if !defined(TARGET_HAIKU)
     dev_t dev = (dev_t)makedev(major, minor);
 #else
@@ -900,7 +961,11 @@ char* SystemNative_MkdTemp(char* pathTemplate)
 intptr_t SystemNative_MksTemps(char* pathTemplate, int32_t suffixLength)
 {
     intptr_t result;
-#if HAVE_MKSTEMPS
+#if defined(__NuttX__)
+    (void)pathTemplate; (void)suffixLength;
+    errno = ENOTSUP;
+    result = -1;
+#elif HAVE_MKSTEMPS
     while ((result = mkstemps(pathTemplate, suffixLength)) < 0 && errno == EINTR);
 #elif HAVE_MKSTEMP
     // mkstemps is not available bionic/Android, but mkstemp is
@@ -944,6 +1009,20 @@ intptr_t SystemNative_MksTemps(char* pathTemplate, int32_t suffixLength)
 #endif
     return  result;
 }
+
+#ifdef __NuttX__
+/* NuttX has limited mmap support — stub out all mmap functions */
+void* SystemNative_MMap(void* address, uint64_t length, int32_t protection, int32_t flags, intptr_t fd, int64_t offset)
+{
+    (void)address; (void)length; (void)protection; (void)flags; (void)fd; (void)offset;
+    errno = ENOTSUP;
+    return NULL;
+}
+int32_t SystemNative_MUnmap(void* address, uint64_t length) { (void)address; (void)length; errno = ENOTSUP; return -1; }
+int32_t SystemNative_MProtect(void* address, uint64_t length, int32_t protection) { (void)address; (void)length; (void)protection; errno = ENOTSUP; return -1; }
+int32_t SystemNative_MAdvise(void* address, uint64_t length, int32_t advice) { (void)address; (void)length; (void)advice; errno = ENOTSUP; return -1; }
+int32_t SystemNative_MSync(void* address, uint64_t length, int32_t flags) { (void)address; (void)length; (void)flags; errno = ENOTSUP; return -1; }
+#else /* !__NuttX__ */
 
 static int32_t ConvertMMapProtection(int32_t protection)
 {
@@ -1125,6 +1204,7 @@ int32_t SystemNative_MSync(void* address, uint64_t length, int32_t flags)
     return -1;
 #endif
 }
+#endif /* !__NuttX__ (mmap block) */
 
 int64_t SystemNative_SysConf(int32_t name)
 {
@@ -1295,6 +1375,11 @@ int32_t SystemNative_WriteToNonblocking(intptr_t fd, const void* buffer, int32_t
 
 int32_t SystemNative_ReadLink(const char* path, char* buffer, int32_t bufferSize)
 {
+#ifdef __NuttX__
+    (void)path; (void)buffer; (void)bufferSize;
+    errno = ENOTSUP;
+    return -1;
+#else
     assert(buffer != NULL || bufferSize == 0);
     assert(bufferSize >= 0);
 
@@ -1308,6 +1393,7 @@ int32_t SystemNative_ReadLink(const char* path, char* buffer, int32_t bufferSize
     assert(count >= -1 && count <= bufferSize);
 
     return (int32_t)count;
+#endif
 }
 
 int32_t SystemNative_Rename(const char* oldPath, const char* newPath)
@@ -1326,9 +1412,9 @@ int32_t SystemNative_RmDir(const char* path)
 
 void SystemNative_Sync(void)
 {
-#if !defined(TARGET_WASI)
+#if !defined(TARGET_WASI) && !defined(__NuttX__)
     sync();
-#endif /* TARGET_WASI */
+#endif
 }
 
 int32_t SystemNative_Write(intptr_t fd, const void* buffer, int32_t bufferSize)
@@ -1695,8 +1781,8 @@ static uint32_t FileSystemNameSupportsLocking(const char* fileSystemName)
 uint32_t SystemNative_FileSystemSupportsLocking(intptr_t fd, int32_t lockOperation, int32_t accessWrite)
 {
     assert(lockOperation == PAL_LOCK_SH || lockOperation == PAL_LOCK_EX);
-#if defined(TARGET_WASI) || defined(TARGET_WASM)
-    return 0; // WASI/WASM doesn't support locking.
+#if defined(TARGET_WASI) || defined(TARGET_WASM) || defined(__NuttX__)
+    return 0; // WASI/WASM/NuttX doesn't support locking.
 #else
     if (lockOperation == PAL_LOCK_EX || accessWrite == 0)
     {
@@ -1750,7 +1836,11 @@ uint32_t SystemNative_FileSystemSupportsLocking(intptr_t fd, int32_t lockOperati
 
 int32_t SystemNative_LockFileRegion(intptr_t fd, int64_t offset, int64_t length, int16_t lockType)
 {
-#if !defined(TARGET_WASI)
+#if defined(__NuttX__)
+    (void)fd; (void)offset; (void)length; (void)lockType;
+    errno = ENOTSUP;
+    return -1;
+#elif !defined(TARGET_WASI)
     int16_t unixLockType = ConvertLockType(lockType);
     if (offset < 0 || length < 0)
     {

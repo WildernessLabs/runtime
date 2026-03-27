@@ -1,5 +1,40 @@
 project(System.Native C)
 
+# NuttX: compile only the subset of PAL files ready for this platform.
+# pal_networking.c, pal_process.c, etc. will be added in future tracks.
+if(CMAKE_SYSTEM_VARIANT STREQUAL "nuttx")
+  set(NUTTX_NATIVE_SOURCES
+    pal_errno.c
+    pal_io.c
+    pal_memory.c
+    pal_random.c
+    pal_runtimeinformation.c
+    pal_string.c
+    pal_time.c
+    pal_datetime.c
+    pal_threading.c
+    pal_log.c
+    pal_networking.c
+    pal_autoreleasepool.c
+    # pal_environment.c excluded — NuttX macro `#define environ get_environ_ptr()` conflicts
+    pal_searchpath.c
+    pal_iossupportversion.c
+    # pal_console.c excluded — needs NuttX-specific atexit/signal patches (future track)
+  )
+
+  add_library(System.Native-Static STATIC ${NUTTX_NATIVE_SOURCES})
+  set_target_properties(System.Native-Static PROPERTIES OUTPUT_NAME System.Native CLEAN_DIRECT_OUTPUT 1)
+  target_include_directories(System.Native-Static PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/../Common
+  )
+  target_compile_definitions(System.Native-Static PRIVATE TARGET_UNIX=1 __NuttX__=1)
+  if(DEFINED STATIC_LIB_DESTINATION)
+    install(TARGETS System.Native-Static DESTINATION ${STATIC_LIB_DESTINATION} COMPONENT libs)
+  endif()
+  return()
+endif()
+
 if (NOT CLR_CMAKE_TARGET_MACCATALYST AND NOT CLR_CMAKE_TARGET_IOS AND NOT CLR_CMAKE_TARGET_TVOS AND NOT CLR_CMAKE_TARGET_BROWSER AND NOT CLR_CMAKE_TARGET_WASI)
     add_definitions(-DHAS_CONSOLE_SIGNALS)
 endif ()

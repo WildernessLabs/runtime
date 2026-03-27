@@ -40,7 +40,11 @@ inline static int32_t Common_Read(intptr_t fd, void* buffer, int32_t bufferSize)
 
     if (bufferSize < 0)
     {
+#ifdef __NuttX__
+        set_errno(EINVAL);
+#else
         errno = EINVAL;
+#endif
         return -1;
     }
 
@@ -58,7 +62,11 @@ inline static int32_t Common_Write(intptr_t fd, const void* buffer, int32_t buff
 
     if (bufferSize < 0)
     {
+#ifdef __NuttX__
+        set_errno(ERANGE);
+#else
         errno = ERANGE;
+#endif
         return -1;
     }
 
