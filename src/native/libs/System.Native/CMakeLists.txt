@@ -1,7 +1,7 @@
 project(System.Native C)
 
 # NuttX: compile only the subset of PAL files ready for this platform.
-# pal_networking.c, pal_process.c, etc. will be added in future tracks.
+# pal_console.c excluded — needs pal_signal.c dependency (future track).
 if(CMAKE_SYSTEM_VARIANT STREQUAL "nuttx")
   set(NUTTX_NATIVE_SOURCES
     pal_errno.c
@@ -15,8 +15,9 @@ if(CMAKE_SYSTEM_VARIANT STREQUAL "nuttx")
     pal_threading.c
     pal_log.c
     pal_networking.c
+    pal_process.c
     pal_autoreleasepool.c
-    # pal_environment.c excluded — NuttX macro `#define environ get_environ_ptr()` conflicts
+    pal_environment.c
     pal_searchpath.c
     pal_iossupportversion.c
     # pal_console.c excluded — needs NuttX-specific atexit/signal patches (future track)

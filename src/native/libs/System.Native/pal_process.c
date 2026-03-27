@@ -8,7 +8,9 @@
 
 #include <assert.h>
 #include <errno.h>
+#ifndef __NuttX__
 #include <grp.h>
+#endif
 #include <limits.h>
 #include <signal.h>
 #include <stdlib.h>
@@ -39,7 +41,9 @@
 #include <sys/sysctl.h>
 #endif
 
+#ifndef __NuttX__
 #include <minipal/getexepath.h>
+#endif
 
 // Validate that our SysLogPriority values are correct for the platform
 c_static_assert(PAL_LOG_EMERG == LOG_EMERG);
@@ -52,11 +56,13 @@ c_static_assert(PAL_LOG_INFO == LOG_INFO);
 c_static_assert(PAL_LOG_DEBUG == LOG_DEBUG);
 
 // Validate that out PriorityWhich values are correct for the platform
+#ifndef __NuttX__  // NuttX PRIO_* values are 1,2,3 instead of POSIX 0,1,2
 c_static_assert(PAL_PRIO_PROCESS == (int)PRIO_PROCESS);
 c_static_assert(PAL_PRIO_PGRP == (int)PRIO_PGRP);
 c_static_assert(PAL_PRIO_USER == (int)PRIO_USER);
+#endif
 
-#if !HAVE_PIPE2
+#if !HAVE_PIPE2 && HAVE_FORK
 static pthread_mutex_t ProcessCreateLock = PTHREAD_MUTEX_INITIALIZER;
 #endif
 
@@ -133,6 +139,7 @@ static void ExitChild(int pipeToParent, int error)
     _exit(error != 0 ? error : EXIT_FAILURE);
 }
 
+#if HAVE_FORK
 static int compare_groups(const void * a, const void * b)
 {
     // Cast to signed because we need a signed return value.
@@ -208,6 +215,7 @@ handler_from_sigaction (struct sigaction *sa)
         return sa->sa_handler;
     }
 }
+#endif // HAVE_FORK
 
 int32_t SystemNative_ForkAndExecProcess(const char* filename,
                                       char* const argv[],
@@ -671,17 +679,25 @@ int32_t SystemNative_Kill(int32_t pid, int32_t signal)
              signal = 0;
              break;
 
+#ifdef SIGKILL
         case PAL_SIGKILL:
              signal = SIGKILL;
              break;
+#endif
 
+#ifdef SIGSTOP
         case PAL_SIGSTOP:
              signal = SIGSTOP;
              break;
+#endif
 
         default:
              assert_msg(false, "Unknown signal", signal);
+#ifdef __NuttX__
+             set_errno(EINVAL);
+#else
              errno = EINVAL;
+#endif
              return -1;
     }
 
@@ -693,16 +709,39 @@ int32_t SystemNative_GetPid(void)
     return getpid();
 }
 
+#ifdef __NuttX__
+int32_t SystemNative_GetSid(int32_t pid)
+{
+    // NuttX has no getsid(); return the pid itself (single-session system)
+    (void)pid;
+    return getpid();
+}
+#else
 int32_t SystemNative_GetSid(int32_t pid)
 {
     return getsid(pid);
 }
+#endif
 
 void SystemNative_SysLog(SysLogPriority priority, const char* message, const char* arg1)
 {
     syslog((int)(LOG_USER | priority), message, arg1);
 }
 
+#ifdef __NuttX__
+// NuttX has no fork, so no child processes to wait for.
+int32_t SystemNative_WaitIdAnyExitedNoHangNoWait(void)
+{
+    return 0; // no waitable children
+}
+
+int32_t SystemNative_WaitPidExitedNoHang(int32_t pid, int32_t* exitCode)
+{
+    (void)pid;
+    (void)exitCode;
+    return 0; // no waitable children
+}
+#else
 int32_t SystemNative_WaitIdAnyExitedNoHangNoWait(void)
 {
     siginfo_t siginfo;
@@ -752,7 +791,23 @@ int32_t SystemNative_WaitPidExitedNoHang(int32_t pid, int32_t* exitCode)
     }
     return result;
 }
+#endif
 
+#ifdef __NuttX__
+int64_t SystemNative_PathConf(const char* path, PathConfName name)
+{
+    // NuttX has no pathconf(). Return reasonable defaults.
+    (void)path;
+    switch (name)
+    {
+        case PAL_PC_NAME_MAX: return NAME_MAX;
+        case PAL_PC_PATH_MAX: return PATH_MAX;
+        default:
+            set_errno(ENOTSUP);
+            return -1;
+    }
+}
+#else
 int64_t SystemNative_PathConf(const char* path, PathConfName name)
 {
     int32_t confValue = -1;
@@ -796,7 +851,27 @@ int64_t SystemNative_PathConf(const char* path, PathConfName name)
 
     return pathconf(path, confValue);
 }
+#endif
 
+#ifdef __NuttX__
+// NuttX declares getpriority/setpriority in sys/resource.h but doesn't
+// implement them in user space. Stub with ENOTSUP.
+int32_t SystemNative_GetPriority(PriorityWhich which, int32_t who)
+{
+    (void)which;
+    (void)who;
+    set_errno(0);
+    return 0;
+}
+
+int32_t SystemNative_SetPriority(PriorityWhich which, int32_t who, int32_t nice)
+{
+    (void)which;
+    (void)who;
+    (void)nice;
+    return 0;
+}
+#else
 int32_t SystemNative_GetPriority(PriorityWhich which, int32_t who)
 {
     // GetPriority uses errno 0 to show success to make sure we don't have a stale value
@@ -816,6 +891,7 @@ int32_t SystemNative_SetPriority(PriorityWhich which, int32_t who, int32_t nice)
     return setpriority((priorityWhich)which, (id_t)who, nice);
 #endif
 }
+#endif // __NuttX__
 
 char* SystemNative_GetCwd(char* buffer, int32_t bufferSize)
 {
@@ -823,7 +899,11 @@ char* SystemNative_GetCwd(char* buffer, int32_t bufferSize)
 
     if (bufferSize < 0)
     {
+#ifdef __NuttX__
+        set_errno(EINVAL);
+#else
         errno = EINVAL;
+#endif
         return NULL;
     }
 
@@ -857,7 +937,11 @@ int32_t SystemNative_SchedSetAffinity(int32_t pid, intptr_t* mask)
 {
     (void)pid;
     (void)mask;
+#ifdef __NuttX__
+    set_errno(ENOTSUP);
+#else
     errno = ENOTSUP;
+#endif
     return -1;
 }
 #endif
@@ -897,12 +981,21 @@ int32_t SystemNative_SchedGetAffinity(int32_t pid, intptr_t* mask)
 {
     (void)pid;
     (void)mask;
+#ifdef __NuttX__
+    set_errno(ENOTSUP);
+#else
     errno = ENOTSUP;
+#endif
     return -1;
 }
 #endif
 
 char* SystemNative_GetProcessPath(void)
 {
+#ifdef __NuttX__
+    // NuttX has no /proc/self/exe; return fixed path.
+    return strdup("/meadow0/Meadow");
+#else
     return minipal_getexepath();
+#endif
 }

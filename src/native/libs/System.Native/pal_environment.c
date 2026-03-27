@@ -19,14 +19,19 @@ char** SystemNative_GetEnviron(void)
 {
 #if HAVE_NSGETENVIRON
     return *(_NSGetEnviron());
+#elif defined(__NuttX__)
+    // NuttX #defines environ as get_environ_ptr(), but that function is
+    // kernel-only (not available in user space). Return empty env.
+    static char *empty_environ[] = { NULL };
+    return empty_environ;
 #else
     extern char **environ;
     return environ;
 #endif
 }
 
-void SystemNative_FreeEnviron(char** environ)
+void SystemNative_FreeEnviron(char** envp)
 {
     // no op
-    (void)environ;
+    (void)envp;
 }
