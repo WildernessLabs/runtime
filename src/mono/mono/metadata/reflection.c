@@ -684,6 +684,15 @@ MonoReflectionMethodHandle
 mono_method_get_object_handle (MonoMethod *method, MonoClass *refclass, MonoError *error)
 {
 	error_init (error);
+	if (!method) {
+		/* NuttX: some callers pass NULL method (e.g. unimplemented interface methods
+		   in vtable, property accessors, event handlers). Return NULL without
+		   setting an error — callers that check for NULL will handle it. */
+		g_warning ("mono_method_get_object_handle: method is NULL (refclass=%s.%s)",
+			refclass ? m_class_get_name_space (refclass) : "?",
+			refclass ? m_class_get_name (refclass) : "?");
+		return MONO_HANDLE_NEW (MonoReflectionMethod, NULL);
+	}
 	if (!refclass)
 		refclass = method->klass;
 

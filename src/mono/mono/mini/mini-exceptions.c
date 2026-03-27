@@ -993,6 +993,8 @@ mono_exception_stackframe_obj_walk (MonoStackFrame *captured_frame, MonoExceptio
 static gboolean
 mono_exception_stacktrace_obj_walk (MonoStackTrace *st, MonoExceptionFrameWalk func, gpointer user_data)
 {
+	if (!st)
+		return FALSE;
 	int num_captured = st->captured_traces ? mono_array_length_internal (st->captured_traces) : 0;
 	for (int i=0; i < num_captured; i++) {
 		MonoStackTrace *curr_trace = mono_array_get_fast (st->captured_traces, MonoStackTrace *, i);
@@ -1055,6 +1057,7 @@ mono_exception_walk_trace_internal (MonoException *ex, MonoExceptionFrameWalk fu
 	len = ta ? mono_array_length_internal (ta) : 0;
 	gboolean captured_has_traces = len > 0;
 
+#ifndef __NuttX__
 	for (int i = 0; i < len; i++) {
 		MonoStackTrace *captured_trace = mono_array_get_fast (ta, MonoStackTrace *, i);
 		if (!captured_trace)
@@ -1062,6 +1065,11 @@ mono_exception_walk_trace_internal (MonoException *ex, MonoExceptionFrameWalk fu
 
 		mono_exception_stacktrace_obj_walk (captured_trace, func, user_data);
 	}
+#else
+	/* NuttX: skip captured_traces walk — the managed Exception.foreignExceptionsFrames
+	   is MonoStackFrame[], not MonoStackTrace[], causing struct layout mismatch crash */
+	(void)len;
+#endif
 
 	return captured_has_traces || otherwise_has_traces;
 }

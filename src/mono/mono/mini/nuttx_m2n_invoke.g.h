@@ -332,6 +332,17 @@ nuttx_invoke_lill (void *target_func, InterpMethodArguments *margs)
 	*(gint64*)margs->retval = res;
 }
 
+static void
+nuttx_invoke_lili (void *target_func, InterpMethodArguments *margs)
+{
+	/* e.g. lseek(int fd, off_t offset, int whence) -> off_t */
+	typedef gint64 (*T)(int, gint64, int);
+	T func = (T)target_func;
+	/* ARM AAPCS: int in r0, int64 in r2:r3 (r1 padding), int in stack[0] */
+	gint64 res = func ((int)(gssize)margs->iargs [0], get_long_arg (margs, 1), (int)(gssize)margs->iargs [3]);
+	*(gint64*)margs->retval = res;
+}
+
 /* ------------------------------------------------------------------ */
 /*  float return                                                      */
 /* ------------------------------------------------------------------ */
@@ -637,6 +648,7 @@ static const NuttxInvokeEntry nuttx_invoke_table [] = {
 	{ "LIII",      nuttx_invoke_liii },
 	{ "LL",        nuttx_invoke_ll },
 	{ "LIL",       nuttx_invoke_lil },
+	{ "LILI",      nuttx_invoke_lili },
 	{ "LILL",      nuttx_invoke_lill },
 	/* float return */
 	{ "F",         nuttx_invoke_f },
