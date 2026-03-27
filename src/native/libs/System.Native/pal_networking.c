@@ -685,7 +685,11 @@ int32_t SystemNative_GetDomainName(uint8_t* name, int32_t nameLength)
     return 0;
 #else
     // GetDomainName is not supported on this platform.
+#ifdef __NuttX__
+    set_errno(ENOTSUP);
+#else
     errno = ENOTSUP;
+#endif
     return -1;
 #endif
 }
@@ -1575,7 +1579,11 @@ int32_t SystemNative_ReceiveSocketError(intptr_t socket, MessageHeader* messageH
     }
 #else
     res = -1;
+#ifdef __NuttX__
+    set_errno(ENOTSUP);
+#else
     errno = ENOTSUP;
+#endif
 #endif
 
     messageHeader->SocketAddressLen = 0;
@@ -1746,7 +1754,11 @@ int32_t SystemNative_Accept(intptr_t socket, uint8_t* socketAddress, int32_t* so
         int oldErrno = errno;
         close(accepted);
         accepted = -1;
+#ifdef __NuttX__
+        set_errno(oldErrno);
+#else
         errno = oldErrno;
+#endif
     }
 #endif
 #if !defined(__linux__)
@@ -1757,7 +1769,11 @@ int32_t SystemNative_Accept(intptr_t socket, uint8_t* socketAddress, int32_t* so
         int oldErrno = errno;
         close(accepted);
         accepted = -1;
+#ifdef __NuttX__
+        set_errno(oldErrno);
+#else
         errno = oldErrno;
+#endif
     }
 #endif
 #endif
@@ -2043,21 +2059,29 @@ static bool TryGetPlatformSocketOption(int32_t socketOptionLevel, int32_t socket
 
             switch (socketOptionName)
             {
+#ifdef IP_OPTIONS
                 case SocketOptionName_SO_IP_OPTIONS:
                     *optName = IP_OPTIONS;
                     return true;
+#endif
 
+#ifdef IP_HDRINCL
                 case SocketOptionName_SO_IP_HDRINCL:
                     *optName = IP_HDRINCL;
                     return true;
+#endif
 
+#ifdef IP_TOS
                 case SocketOptionName_SO_IP_TOS:
                     *optName = IP_TOS;
                     return true;
+#endif
 
+#ifdef IP_TTL
                 case SocketOptionName_SO_IP_TTL:
                     *optName = IP_TTL;
                     return true;
+#endif
 
                 case SocketOptionName_SO_IP_MULTICAST_IF:
                     *optName = IP_MULTICAST_IF;
@@ -2128,9 +2152,11 @@ static bool TryGetPlatformSocketOption(int32_t socketOptionLevel, int32_t socket
 
             switch (socketOptionName)
             {
+#ifdef IPV6_HOPLIMIT
                 case SocketOptionName_SO_IPV6_HOPLIMIT:
                     *optName = IPV6_HOPLIMIT;
                     return true;
+#endif
 
                 // case SocketOptionName_SO_IPV6_PROTECTION_LEVEL:
 
@@ -2138,9 +2164,11 @@ static bool TryGetPlatformSocketOption(int32_t socketOptionLevel, int32_t socket
                     *optName = IPV6_V6ONLY;
                     return true;
 
+#ifdef IPV6_RECVPKTINFO
                 case SocketOptionName_SO_IP_PKTINFO:
                     *optName = IPV6_RECVPKTINFO;
                     return true;
+#endif
 
                 case SocketOptionName_SO_IP_MULTICAST_IF:
                     *optName = IPV6_MULTICAST_IF;
