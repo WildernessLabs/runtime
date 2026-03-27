@@ -1402,12 +1402,69 @@ typedef struct {
 	PInvokeArgType *arg_types;
 } BuildArgsFromSigInfo;
 
+/*
+ * Detect value types with a single scalar field (e.g., ObjectHandleOnStack,
+ * QCallAssembly).  These structs should be passed by value (as their inner
+ * scalar), not by reference.  Without this, the interpreter passes a pointer
+ * TO the struct, adding an extra indirection that breaks icalls expecting the
+ * struct's VALUE.
+ *
+ * This is critical on interpreter-only platforms (WASM, NuttX) where there's
+ * no JIT to emit correct by-value passing via registers.
+ */
+#if defined(__NuttX__) && defined(DISABLE_JIT)
+static gboolean
+mini_interp_is_scalar_vtype (MonoType *type, MonoType **etype)
+{
+	MonoClass *klass;
+	MonoClassField *field;
+	gpointer iter;
+
+	if (etype)
+		*etype = NULL;
+
+	if (!MONO_TYPE_ISSTRUCT (type))
+		return FALSE;
+	klass = mono_class_from_mono_type_internal (type);
+	mono_class_init_internal (klass);
+
+	int size = mono_class_value_size (klass, NULL);
+	if (size == 0 || size > SIZEOF_VOID_P)
+		return FALSE;
+
+	iter = NULL;
+	int nfields = 0;
+	field = NULL;
+	while ((field = mono_class_get_fields_internal (klass, &iter))) {
+		if (field->type->attrs & FIELD_ATTRIBUTE_STATIC)
+			continue;
+		nfields++;
+		if (nfields > 1)
+			return FALSE;
+		MonoType *t = mini_get_underlying_type (field->type);
+		if (!(MONO_TYPE_IS_PRIMITIVE (t) || MONO_TYPE_IS_REFERENCE (t) || MONO_TYPE_IS_POINTER (t)))
+			return FALSE;
+		if (etype)
+			*etype = t;
+	}
+
+	if (nfields == 0)
+		return FALSE;
+
+	return TRUE;
+}
+#endif
+
 static MonoType *
 filter_type_for_args_from_sig (MonoType *type) {
 #if defined(HOST_WASM)
 	MonoType *etype;
 	if (MONO_TYPE_ISSTRUCT (type) && mini_wasm_is_scalar_vtype (type, &etype))
 		// FIXME: Does this need to be recursive?
+		return etype;
+#elif defined(__NuttX__) && defined(DISABLE_JIT)
+	MonoType *etype;
+	if (MONO_TYPE_ISSTRUCT (type) && mini_interp_is_scalar_vtype (type, &etype))
 		return etype;
 #endif
 	return type;
@@ -1482,6 +1539,12 @@ retry:
 				/* Scalar vtypes are passed by value */
 				// FIXME: r4/r8
 				if (mini_wasm_is_scalar_vtype (sig->params [i], &etype) && etype->type != MONO_TYPE_R4 && etype->type != MONO_TYPE_R8)
+					info->arg_types [i] = PINVOKE_ARG_SCALAR_VTYPE;
+			}
+#elif defined(__NuttX__) && defined(DISABLE_JIT)
+			{
+				MonoType *etype;
+				if (mini_interp_is_scalar_vtype (sig->params [i], &etype) && etype->type != MONO_TYPE_R4 && etype->type != MONO_TYPE_R8)
 					info->arg_types [i] = PINVOKE_ARG_SCALAR_VTYPE;
 			}
 #endif

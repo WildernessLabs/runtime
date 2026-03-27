@@ -2812,23 +2812,6 @@ interp_handle_intrinsics (TransformData *td, MonoMethod *target_method, MonoClas
 		}
 	}
 
-#ifdef __NuttX__
-	/* NuttX/ARM32 interpreter workaround: ObjectHeader.TryEnterFast and
-	 * ObjectHeader.TryExitChecked use Unsafe.AsPointer + ref struct patterns
-	 * that operate on the wrong memory in the interpreter (stack slot instead
-	 * of object header). This causes broken locking and infinite recursion
-	 * via SynchronizationLockException → SR resource loading → Monitor.
-	 *
-	 * Replace these with constant false, forcing Monitor.Enter and Monitor.Exit
-	 * to use their native icall slow paths which correctly access object headers. */
-	if (in_corlib &&
-	    !strcmp (klass_name_space, "System.Threading") &&
-	    !strcmp (klass_name, "ObjectHeader") &&
-	    (!strcmp (tm, "TryEnterFast") || !strcmp (tm, "TryExitChecked"))) {
-		*op = MINT_LDC_I4_0;
-	}
-#endif
-
 	return FALSE;
 }
 
