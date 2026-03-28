@@ -1412,7 +1412,7 @@ typedef struct {
  * This is critical on interpreter-only platforms (WASM, NuttX) where there's
  * no JIT to emit correct by-value passing via registers.
  */
-#if defined(__NuttX__) && defined(DISABLE_JIT)
+#if defined(__NuttX__)
 static gboolean
 mini_interp_is_scalar_vtype (MonoType *type, MonoType **etype)
 {
@@ -1462,7 +1462,7 @@ filter_type_for_args_from_sig (MonoType *type) {
 	if (MONO_TYPE_ISSTRUCT (type) && mini_wasm_is_scalar_vtype (type, &etype))
 		// FIXME: Does this need to be recursive?
 		return etype;
-#elif defined(__NuttX__) && defined(DISABLE_JIT)
+#elif defined(__NuttX__)
 	MonoType *etype;
 	if (MONO_TYPE_ISSTRUCT (type) && mini_interp_is_scalar_vtype (type, &etype))
 		return etype;
@@ -1541,7 +1541,7 @@ retry:
 				if (mini_wasm_is_scalar_vtype (sig->params [i], &etype) && etype->type != MONO_TYPE_R4 && etype->type != MONO_TYPE_R8)
 					info->arg_types [i] = PINVOKE_ARG_SCALAR_VTYPE;
 			}
-#elif defined(__NuttX__) && defined(DISABLE_JIT)
+#elif defined(__NuttX__)
 			{
 				MonoType *etype;
 				if (mini_interp_is_scalar_vtype (sig->params [i], &etype) && etype->type != MONO_TYPE_R4 && etype->type != MONO_TYPE_R8)

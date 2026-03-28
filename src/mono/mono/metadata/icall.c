@@ -3200,10 +3200,9 @@ ves_icall_RuntimeType_GetName (MonoQCallTypeHandle type_handle, MonoObjectHandle
 	if (m_type_is_byref (type)) {
 		char *n = g_strdup_printf ("%s&", name);
 		HANDLE_ON_STACK_SET (res, mono_string_new_checked (n, error));
-
 		g_free (n);
 	} else {
-	    HANDLE_ON_STACK_SET (res, mono_string_new_checked (name, error));
+		HANDLE_ON_STACK_SET (res, mono_string_new_checked (name, error));
 	}
 }
 
