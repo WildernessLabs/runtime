@@ -36,6 +36,37 @@
 void
 mono_arch_patch_callsite (guint8 *method_start, guint8 *code_ptr, guint8 *addr)
 {
+#ifdef __thumb2__
+	/* Thumb2: code_ptr points after the BL instruction (4 bytes).
+	 * A 32-bit BL is stored as two 16-bit halfwords: hw1 hw2.
+	 * hw1 = 0xF000 | S:imm10, hw2 = 0xD000 | J1:J2:imm11 */
+	guint8 *insn = code_ptr - 4;
+	/* Strip Thumb bit if present */
+	insn = (guint8 *)((gsize)insn & ~(gsize)1);
+	guint16 hw1 = *(guint16 *)insn;
+
+	if ((hw1 & 0xF800) == 0xF000) {
+		guint16 hw2 = *(guint16 *)(insn + 2);
+		if ((hw2 & 0xD000) == 0xD000) {
+			/* BL — patch it */
+			arm_patch (insn, addr);
+			mono_arch_flush_icache (insn, 4);
+			return;
+		}
+	}
+
+	/* Could be an indirect call via BLX reg — check for LDR + BLX pattern.
+	 * The thunk is: LDR.W ip,[PC,#4] + BX ip + NOP + literal (12 bytes).
+	 * Look back for BLX (16-bit: 0x47x0 where x encodes reg). */
+	guint16 prev16 = *(guint16 *)(code_ptr - 2);
+	if ((prev16 & 0xFF80) == 0x4780) {
+		/* BLX reg — patch the literal in the preceding thunk */
+		/* For now, treat as not patchable (the thunk literal is handled elsewhere) */
+		return;
+	}
+
+	g_assert_not_reached ();
+#else
 	guint32 *code = (guint32*)code_ptr;
 
 	/* This is the 'bl' or the 'mov pc' instruction */
@@ -59,6 +90,7 @@ mono_arch_patch_callsite (guint8 *method_start, guint8 *code_ptr, guint8 *addr)
 	}
 
 	g_assert_not_reached ();
+#endif
 }
 
 void
@@ -100,6 +132,10 @@ mono_arch_patch_plt_entry (guint8 *code, gpointer *got, host_mgreg_t *regs, guin
 static guint32
 branch_for_target_reachable (guint8 *branch, guint8 *target)
 {
+#ifdef __thumb2__
+	/* Thumb2 branch encoding is different; fall back to long branch */
+	return 0;
+#else
 	gint diff = GPTRDIFF_TO_INT (target - branch - 8);
 	g_assert ((diff & 3) == 0);
 	if (diff >= 0) {
@@ -111,6 +147,7 @@ branch_for_target_reachable (guint8 *branch, guint8 *target)
 			return (ARMCOND_AL << ARMCOND_SHIFT) | (ARM_BR_TAG) | ((diff >> 2) & ~0xff000000);
 	}
 	return 0;
+#endif
 }
 
 static guint8*
@@ -215,8 +252,7 @@ mono_arch_create_generic_trampoline (MonoTrampolineType tramp_type, MonoTrampInf
 	 */
 	if (aot) {
 		ji = mono_patch_info_list_prepend (ji, GPTRDIFF_TO_INT (code - buf), MONO_PATCH_INFO_JIT_ICALL_ADDR, GUINT_TO_POINTER (MONO_JIT_ICALL_mono_get_lmf_addr));
-		ARM_LDR_IMM (code, ARMREG_R0, ARMREG_PC, 0);
-		ARM_B (code, 0);
+		ARM_LOAD_RELPC (code, ARMREG_R0);
 		*(gpointer*)code = NULL;
 		code += 4;
 		ARM_LDR_REG_REG (code, ARMREG_R0, ARMREG_PC, ARMREG_R0);
@@ -224,8 +260,7 @@ mono_arch_create_generic_trampoline (MonoTrampolineType tramp_type, MonoTrampInf
 		load_get_lmf_addr = code;
 		code += 4;
 	}
-	ARM_MOV_REG_REG (code, ARMREG_LR, ARMREG_PC);
-	code = emit_bx (code, ARMREG_R0);
+	ARM_CALL_REG (code, ARMREG_R0);
 
 	/*
 	 * The stack now looks like:
@@ -293,8 +328,7 @@ mono_arch_create_generic_trampoline (MonoTrampolineType tramp_type, MonoTrampInf
 
 	if (aot) {
 		ji = mono_patch_info_list_prepend (ji, GPTRDIFF_TO_INT (code - buf), MONO_PATCH_INFO_JIT_ICALL_ADDR, GINT_TO_POINTER (mono_trampoline_type_to_jit_icall_id (tramp_type)));
-		ARM_LDR_IMM (code, ARMREG_IP, ARMREG_PC, 0);
-		ARM_B (code, 0);
+		ARM_LOAD_RELPC (code, ARMREG_IP);
 		*(gpointer*)code = NULL;
 		code += 4;
 		ARM_LDR_REG_REG (code, ARMREG_IP, ARMREG_PC, ARMREG_IP);
@@ -303,8 +337,7 @@ mono_arch_create_generic_trampoline (MonoTrampolineType tramp_type, MonoTrampInf
 		code += 4;
 	}
 
-	ARM_MOV_REG_REG (code, ARMREG_LR, ARMREG_PC);
-	code = emit_bx (code, ARMREG_IP);
+	ARM_CALL_REG (code, ARMREG_IP);
 
 	/* OK, code address is now on r0. Move it to the place on the stack
 	 * where IP was saved (it is now no more useful to us and it can be
@@ -330,13 +363,11 @@ mono_arch_create_generic_trampoline (MonoTrampolineType tramp_type, MonoTrampInf
 	if (aot) {
 		code = mono_arm_emit_aotconst (&ji, code, buf, ARMREG_IP, MONO_PATCH_INFO_JIT_ICALL_ADDR, GUINT_TO_POINTER (MONO_JIT_ICALL_mono_thread_force_interruption_checkpoint_noraise));
 	} else {
-		ARM_LDR_IMM (code, ARMREG_IP, ARMREG_PC, 0);
-		ARM_B (code, 0);
+		ARM_LOAD_RELPC (code, ARMREG_IP);
 		*(gpointer*)code = (gpointer)mono_thread_force_interruption_checkpoint_noraise;
 		code += 4;
 	}
-	ARM_MOV_REG_REG (code, ARMREG_LR, ARMREG_PC);
-	code = emit_bx (code, ARMREG_IP);
+	ARM_CALL_REG (code, ARMREG_IP);
 
 	/* Check whenever an exception needs to be thrown */
 	ARM_CMP_REG_IMM (code, ARMREG_R0, 0, 0);
@@ -381,8 +412,8 @@ mono_arch_create_generic_trampoline (MonoTrampolineType tramp_type, MonoTrampInf
 		constants [1] = (gpointer)mono_get_trampoline_func (tramp_type);
 
 		/* backpatch by emitting the missing instructions skipped above */
-		ARM_LDR_IMM (load_get_lmf_addr, ARMREG_R0, ARMREG_PC, (code - load_get_lmf_addr - 8));
-		ARM_LDR_IMM (load_trampoline, ARMREG_IP, ARMREG_PC, (code + 4 - load_trampoline - 8));
+		ARM_LDR_IMM (load_get_lmf_addr, ARMREG_R0, ARMREG_PC, (code - load_get_lmf_addr - 8 + ARMDISP_LDRPC));
+		ARM_LDR_IMM (load_trampoline, ARMREG_IP, ARMREG_PC, (code + 4 - load_trampoline - 8 + ARMDISP_LDRPC));
 		code += 8;
 	}
 
@@ -418,8 +449,7 @@ mono_arch_create_generic_trampoline (MonoTrampolineType tramp_type, MonoTrampInf
 		/* Not really a jit icall */
 		code = mono_arm_emit_aotconst (&ji, code, buf, ARMREG_IP, MONO_PATCH_INFO_JIT_ICALL_ADDR, GUINT_TO_POINTER (MONO_JIT_ICALL_mono_rethrow_preserve_exception));
 	} else {
-		ARM_LDR_IMM (code, ARMREG_IP, ARMREG_PC, 0);
-		ARM_B (code, 0);
+		ARM_LOAD_RELPC (code, ARMREG_IP);
 		*(gpointer*)code = mono_get_rethrow_preserve_exception_addr ();
 		code += 4;
 	}
@@ -439,7 +469,7 @@ mono_arch_create_generic_trampoline (MonoTrampolineType tramp_type, MonoTrampInf
 	tramp_name = mono_get_generic_trampoline_name (tramp_type);
 	*info = mono_tramp_info_create (tramp_name, buf, GPTRDIFF_TO_UINT32 (code - buf), ji, unwind_ops);
 
-	return buf;
+	return CODE_ADDR(buf);
 }
 
 #define SPEC_TRAMP_SIZE 24
@@ -480,19 +510,17 @@ mono_arch_create_specific_trampoline (gpointer arg1, MonoTrampolineType tramp_ty
 	/* We save all the registers, except PC and SP */
 	ARM_PUSH (code, 0x5fff);
 	if (short_branch) {
+#ifdef __thumb2__
+		constants = (guint32*)code;
+		constants [0] = short_branch;
+#else
 		constants = (guint32*)code;
 		constants [0] = short_branch | (1 << 24);
+#endif
 		constants [1] = GPOINTER_TO_UINT (arg1);
 		code += 8;
 	} else {
-		ARM_LDR_IMM (code, ARMREG_R1, ARMREG_PC, 8); /* temp reg */
-		ARM_MOV_REG_REG (code, ARMREG_LR, ARMREG_PC);
-		code = emit_bx (code, ARMREG_R1);
-
-		constants = (guint32*)code;
-		constants [0] = GPOINTER_TO_UINT (arg1);
-		constants [1] = GPOINTER_TO_UINT (tramp);
-		code += 8;
+		ARM_JUMP_REG_PARMA (code, ARMREG_LR, arg1, tramp);
 	}
 
 	/* Flush instruction cache, since we've generated code */
@@ -504,7 +532,7 @@ mono_arch_create_specific_trampoline (gpointer arg1, MonoTrampolineType tramp_ty
 	if (code_len)
 		*code_len = GPTRDIFF_TO_UINT32 (code - buf);
 
-	return buf;
+	return CODE_ADDR(buf);
 }
 
 /*
@@ -528,20 +556,25 @@ mono_arch_get_unbox_trampoline (MonoMethod *m, gpointer addr)
 
 	unwind_ops = mono_arch_get_cie_program ();
 
+#ifdef __thumb2__
+	/* Thumb2: use ARM_JUMP_REG_PARM which encapsulates the correct
+	 * PC-relative offset for Thumb2 instruction encoding. */
+	ARM_ADD_REG_IMM8 (code, ARMREG_R0, ARMREG_R0, MONO_ABI_SIZEOF (MonoObject));
+	ARM_JUMP_REG_PARM (code, ARMREG_IP, addr);
+#else
 	ARM_LDR_IMM (code, ARMREG_IP, ARMREG_PC, 4);
 	ARM_ADD_REG_IMM8 (code, ARMREG_R0, ARMREG_R0, MONO_ABI_SIZEOF (MonoObject));
 	code = emit_bx (code, ARMREG_IP);
 	*(guint32*)code = (guint32)(gsize)addr;
 	code += 4;
+#endif
 	mono_arch_flush_icache (start, GPTRDIFF_TO_INT (code - start));
 	MONO_PROFILER_RAISE (jit_code_buffer, (start, code - start, MONO_PROFILER_CODE_BUFFER_UNBOX_TRAMPOLINE, m));
 	g_assert ((code - start) <= size);
-	/*g_print ("unbox trampoline at %d for %s:%s\n", this_pos, m->klass->name, m->name);
-	g_print ("unbox code is at %p for method at %p\n", start, addr);*/
 
 	mono_tramp_info_register (mono_tramp_info_create (NULL, start, GPTRDIFF_TO_UINT32 (code - start), NULL, unwind_ops), mem_manager);
 
-	return start;
+	return CODE_ADDR(start);
 }
 
 gpointer
@@ -555,12 +588,16 @@ mono_arch_get_static_rgctx_trampoline (MonoMemoryManager *mem_manager, gpointer 
 
 	unwind_ops = mono_arch_get_cie_program ();
 
+#ifdef __thumb2__
+	ARM_JUMP_REG_PARM2 (code, MONO_ARCH_RGCTX_REG, arg, addr);
+#else
 	ARM_LDR_IMM (code, MONO_ARCH_RGCTX_REG, ARMREG_PC, 0);
 	ARM_LDR_IMM (code, ARMREG_PC, ARMREG_PC, 0);
 	*(guint32*)code = (guint32)(gsize)arg;
 	code += 4;
 	*(guint32*)code = (guint32)(gsize)addr;
 	code += 4;
+#endif
 
 	g_assert ((code - start) <= buf_len);
 
@@ -569,7 +606,7 @@ mono_arch_get_static_rgctx_trampoline (MonoMemoryManager *mem_manager, gpointer 
 
 	mono_tramp_info_register (mono_tramp_info_create (NULL, start, GPTRDIFF_TO_UINT32 (code - start), NULL, unwind_ops), mem_manager);
 
-	return start;
+	return CODE_ADDR(start);
 }
 
 /* Same as static rgctx trampoline, but clobbering ARMREG_IP, which is scratch */
@@ -584,12 +621,16 @@ mono_arch_get_ftnptr_arg_trampoline (MonoMemoryManager *mem_manager, gpointer ar
 
 	unwind_ops = mono_arch_get_cie_program ();
 
+#ifdef __thumb2__
+	ARM_JUMP_REG_PARM2 (code, ARMREG_IP, arg, addr);
+#else
 	ARM_LDR_IMM (code, ARMREG_IP, ARMREG_PC, 0);
 	ARM_LDR_IMM (code, ARMREG_PC, ARMREG_PC, 0);
 	*(guint32*)code = (guint32)(gsize)arg;
 	code += 4;
 	*(guint32*)code = (guint32)(gsize)addr;
 	code += 4;
+#endif
 
 	g_assert ((code - start) <= buf_len);
 
@@ -598,7 +639,7 @@ mono_arch_get_ftnptr_arg_trampoline (MonoMemoryManager *mem_manager, gpointer ar
 
 	mono_tramp_info_register (mono_tramp_info_create (NULL, start, GPTRDIFF_TO_UINT32 (code - start), NULL, unwind_ops), mem_manager);
 
-	return start;
+	return CODE_ADDR(start);
 }
 
 gpointer
@@ -692,8 +733,7 @@ mono_arch_create_rgctx_lazy_fetch_trampoline (guint32 slot, MonoTrampInfo **info
 
 	if (aot) {
 		ji = mono_patch_info_list_prepend (ji, GPTRDIFF_TO_INT (code - buf), MONO_PATCH_INFO_SPECIFIC_TRAMPOLINE_LAZY_FETCH_ADDR, GUINT_TO_POINTER (slot));
-		ARM_LDR_IMM (code, ARMREG_R1, ARMREG_PC, 0);
-		ARM_B (code, 0);
+		ARM_LOAD_RELPC (code, ARMREG_R1);
 		*(gpointer*)code = NULL;
 		code += 4;
 		ARM_LDR_REG_REG (code, ARMREG_PC, ARMREG_PC, ARMREG_R1);
@@ -702,10 +742,7 @@ mono_arch_create_rgctx_lazy_fetch_trampoline (guint32 slot, MonoTrampInfo **info
 		tramp = (guint8*)mono_arch_create_specific_trampoline (GUINT_TO_POINTER (slot), MONO_TRAMPOLINE_RGCTX_LAZY_FETCH, mem_manager, &code_len);
 
 		/* Jump to the actual trampoline */
-		ARM_LDR_IMM (code, ARMREG_R1, ARMREG_PC, 0); /* temp reg */
-		code = emit_bx (code, ARMREG_R1);
-		*(gpointer*)code = tramp;
-		code += 4;
+		ARM_JUMP_REG_PARM (code, ARMREG_R1, tramp);
 	}
 
 	mono_arch_flush_icache (buf, GPTRDIFF_TO_INT (code - buf));
@@ -717,7 +754,7 @@ mono_arch_create_rgctx_lazy_fetch_trampoline (guint32 slot, MonoTrampInfo **info
 	*info = mono_tramp_info_create (name, buf, GPTRDIFF_TO_UINT32 (code - buf), ji, unwind_ops);
 	g_free (name);
 
-	return buf;
+	return CODE_ADDR(buf);
 }
 
 gpointer
@@ -801,15 +838,13 @@ mono_arch_create_sdb_trampoline (gboolean single_step, MonoTrampInfo **info, gbo
 			ji = mono_patch_info_list_prepend (ji, GPTRDIFF_TO_INT (code - buf), MONO_PATCH_INFO_JIT_ICALL_ADDR, GUINT_TO_POINTER (MONO_JIT_ICALL_mono_debugger_agent_single_step_from_context));
 		else
 			ji = mono_patch_info_list_prepend (ji, GPTRDIFF_TO_INT (code - buf), MONO_PATCH_INFO_JIT_ICALL_ADDR, GUINT_TO_POINTER (MONO_JIT_ICALL_mono_debugger_agent_breakpoint_from_context));
-		ARM_LDR_IMM (code, ARMREG_IP, ARMREG_PC, 0);
-		ARM_B (code, 0);
+		ARM_LOAD_RELPC (code, ARMREG_IP);
 		*(gpointer*)code = NULL;
 		code += 4;
 		ARM_LDR_REG_REG (code, ARMREG_IP, ARMREG_PC, ARMREG_IP);
 		ARM_BLX_REG (code, ARMREG_IP);
 	} else {
-		ARM_LDR_IMM (code, ARMREG_IP, ARMREG_PC, 0);
-		ARM_B (code, 0);
+		ARM_LOAD_RELPC (code, ARMREG_IP);
 		if (single_step)
 			*(gpointer*)code = (gpointer)mono_component_debugger ()->single_step_from_context;
 		else
@@ -833,7 +868,7 @@ mono_arch_create_sdb_trampoline (gboolean single_step, MonoTrampInfo **info, gbo
 	const char *tramp_name = single_step ? "sdb_single_step_trampoline" : "sdb_breakpoint_trampoline";
 	*info = mono_tramp_info_create (tramp_name, buf, GPTRDIFF_TO_UINT32 (code - buf), ji, unwind_ops);
 
-	return buf;
+	return CODE_ADDR(buf);
 }
 
 /*

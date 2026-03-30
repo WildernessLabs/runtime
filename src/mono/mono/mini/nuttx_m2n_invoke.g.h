@@ -293,6 +293,18 @@ nuttx_invoke_iil (void *target_func, InterpMethodArguments *margs)
 }
 
 static void
+nuttx_invoke_iiiil (void *target_func, InterpMethodArguments *margs)
+{
+	typedef int (*T)(int, int, int, gint64);
+	T func = (T)target_func;
+	int res = func ((int)(gssize)margs->iargs [0],
+	                (int)(gssize)margs->iargs [1],
+	                (int)(gssize)margs->iargs [2],
+	                get_long_arg (margs, 3));
+	*(int*)margs->retval = res;
+}
+
+static void
 nuttx_invoke_ill (void *target_func, InterpMethodArguments *margs)
 {
 	typedef int (*T)(gint64, gint64);
@@ -383,6 +395,42 @@ nuttx_invoke_fiff (void *target_func, InterpMethodArguments *margs)
 	*(float*)margs->retval = res;
 }
 
+static void
+nuttx_invoke_ff (void *target_func, InterpMethodArguments *margs)
+{
+	typedef float (*T)(float);
+	T func = (T)target_func;
+	float res = func (*(float*)&margs->fargs [FIDX (0)]);
+	*(float*)margs->retval = res;
+}
+
+static void
+nuttx_invoke_fff (void *target_func, InterpMethodArguments *margs)
+{
+	typedef float (*T)(float, float);
+	T func = (T)target_func;
+	float res = func (*(float*)&margs->fargs [FIDX (0)], *(float*)&margs->fargs [FIDX (1)]);
+	*(float*)margs->retval = res;
+}
+
+static void
+nuttx_invoke_ffff (void *target_func, InterpMethodArguments *margs)
+{
+	typedef float (*T)(float, float, float);
+	T func = (T)target_func;
+	float res = func (*(float*)&margs->fargs [FIDX (0)], *(float*)&margs->fargs [FIDX (1)], *(float*)&margs->fargs [FIDX (2)]);
+	*(float*)margs->retval = res;
+}
+
+static void
+nuttx_invoke_ffi (void *target_func, InterpMethodArguments *margs)
+{
+	typedef float (*T)(float, int);
+	T func = (T)target_func;
+	float res = func (*(float*)&margs->fargs [FIDX (0)], (int)(gssize)margs->iargs [0]);
+	*(float*)margs->retval = res;
+}
+
 /* ------------------------------------------------------------------ */
 /*  double return                                                     */
 /* ------------------------------------------------------------------ */
@@ -420,6 +468,33 @@ nuttx_invoke_didd (void *target_func, InterpMethodArguments *margs)
 	typedef double (*T)(int, double, double);
 	T func = (T)target_func;
 	double res = func ((int)(gssize)margs->iargs [0], margs->fargs [FIDX (0)], margs->fargs [FIDX (1)]);
+	*(double*)margs->retval = res;
+}
+
+static void
+nuttx_invoke_ddi (void *target_func, InterpMethodArguments *margs)
+{
+	typedef double (*T)(double, int);
+	T func = (T)target_func;
+	double res = func (margs->fargs [FIDX (0)], (int)(gssize)margs->iargs [0]);
+	*(double*)margs->retval = res;
+}
+
+static void
+nuttx_invoke_dd (void *target_func, InterpMethodArguments *margs)
+{
+	typedef double (*T)(double);
+	T func = (T)target_func;
+	double res = func (margs->fargs [FIDX (0)]);
+	*(double*)margs->retval = res;
+}
+
+static void
+nuttx_invoke_ddd (void *target_func, InterpMethodArguments *margs)
+{
+	typedef double (*T)(double, double);
+	T func = (T)target_func;
+	double res = func (margs->fargs [FIDX (0)], margs->fargs [FIDX (1)]);
 	*(double*)margs->retval = res;
 }
 
@@ -633,6 +708,7 @@ static const NuttxInvokeEntry nuttx_invoke_table [] = {
 	{ "IIIIIIIII", nuttx_invoke_iiiiiiiii },
 	{ "IL",        nuttx_invoke_il },
 	{ "IIL",       nuttx_invoke_iil },
+	{ "IIIIL",     nuttx_invoke_iiiil },
 	{ "ILL",       nuttx_invoke_ill },
 	/* int/ptr return, 8-byte struct args */
 	{ "IS",        nuttx_invoke_is },
@@ -655,8 +731,15 @@ static const NuttxInvokeEntry nuttx_invoke_table [] = {
 	{ "FI",        nuttx_invoke_fi },
 	{ "FIF",       nuttx_invoke_fif },
 	{ "FIFF",      nuttx_invoke_fiff },
+	{ "FF",        nuttx_invoke_ff },
+	{ "FFF",       nuttx_invoke_fff },
+	{ "FFFF",      nuttx_invoke_ffff },
+	{ "FFI",       nuttx_invoke_ffi },
 	/* double return */
 	{ "D",         nuttx_invoke_d },
+	{ "DD",        nuttx_invoke_dd },
+	{ "DDD",       nuttx_invoke_ddd },
+	{ "DDI",       nuttx_invoke_ddi },
 	{ "DI",        nuttx_invoke_di },
 	{ "DID",       nuttx_invoke_did },
 	{ "DIDD",      nuttx_invoke_didd },

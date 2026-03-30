@@ -5726,7 +5726,12 @@ get_mscorlib_aot_module (void)
 		amodule = image->aot_module;
 	else
 		amodule = mscorlib_aot_module;
+#ifdef HOST_NUTTX
+	if (!amodule)
+		return NULL;
+#else
 	g_assert (amodule);
+#endif
 	return amodule;
 }
 
@@ -5749,6 +5754,13 @@ mono_aot_get_trampoline_full (const char *name, MonoTrampInfo **out_tinfo)
 		*out_tinfo = NULL;
 		return (gpointer)mono_no_trampolines;
 	}
+
+#ifdef HOST_NUTTX
+	if (!amodule) {
+		*out_tinfo = NULL;
+		return NULL;
+	}
+#endif
 
 	return mono_create_ftnptr_malloc ((guint8 *)load_function_full (amodule, name, out_tinfo));
 }
@@ -6697,8 +6709,13 @@ mono_aot_get_unbox_arbitrary_trampoline (gpointer addr)
 gpointer
 mono_aot_get_unbox_trampoline (MonoMethod *method, gpointer addr)
 {
+#if !defined(DISABLE_JIT)
+	/* No AOT, but the arch trampoline can generate one dynamically */
+	return mono_arch_get_unbox_trampoline (method, addr);
+#else
 	g_assert_not_reached ();
 	return NULL;
+#endif
 }
 
 gpointer

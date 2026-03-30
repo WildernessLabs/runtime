@@ -366,19 +366,13 @@ typedef struct MonoCompileArch {
 #define MONO_ARCH_FLOAT32_SUPPORTED 1
 #define MONO_ARCH_LLVM_TARGET_LAYOUT "e-p:32:32-n32-S64"
 
-#ifdef __NuttX__
-/* NuttX: enable INTERP_ENTRY_TRAMPOLINE so interp_entry_from_trampoline()
- * compiles with CallContext support.  The other three macros stay off —
- * interp-to-native uses per-signature C wrappers (aot-runtime-nuttx.c),
- * native-to-interp uses a thunk pool (also in aot-runtime-nuttx.c),
- * and ftnptr_arg uses neither JIT nor AOT. */
-#define MONO_ARCH_HAVE_INTERP_ENTRY_TRAMPOLINE 1
-#else
+/* NuttX JIT: enable all trampoline macros (same as other platforms).
+ * The per-signature C wrappers in aot-runtime-nuttx.c remain available
+ * as fallback for interpreter-mode P/Invoke if needed. */
 #define MONO_ARCH_HAVE_INTERP_ENTRY_TRAMPOLINE 1
 #define MONO_ARCH_HAVE_FTNPTR_ARG_TRAMPOLINE 1
 #define MONO_ARCH_HAVE_INTERP_PINVOKE_TRAMP 1
 #define MONO_ARCH_HAVE_INTERP_NATIVE_TO_MANAGED 1
-#endif
 
 #if defined(TARGET_WATCHOS) || (defined(__linux__) && !defined(TARGET_ANDROID) && !defined(TARGET_LINUX_MUSL))
 #define MONO_ARCH_DISABLE_HW_TRAPS 1
@@ -411,7 +405,7 @@ typedef struct MonoCompileArch {
 
 #define MONO_ARCH_INIT_TOP_LMF_ENTRY(lmf)
 
-#if defined(TARGET_TVOS) || defined(TARGET_WATCHOS)
+#if defined(TARGET_TVOS) || defined(TARGET_WATCHOS) || defined(HOST_NUTTX)
 #define MONO_ARCH_EXPLICIT_NULL_CHECKS 1
 #endif
 

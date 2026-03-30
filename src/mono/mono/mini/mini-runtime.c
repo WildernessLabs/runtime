@@ -132,7 +132,11 @@ gboolean mono_use_fast_math = FALSE;
 MonoCPUFeatures mono_cpu_features_enabled = (MonoCPUFeatures)0;
 
 #ifdef DISABLE_SIMD
+#ifdef MONO_CPU_X86_FULL_SSEAVX_COMBINED
 MonoCPUFeatures mono_cpu_features_disabled = MONO_CPU_X86_FULL_SSEAVX_COMBINED;
+#else
+MonoCPUFeatures mono_cpu_features_disabled = (MonoCPUFeatures)0;
+#endif
 #else
 MonoCPUFeatures mono_cpu_features_disabled = (MonoCPUFeatures)0;
 #endif
@@ -2653,6 +2657,12 @@ compile_special (MonoMethod *method, MonoError *error)
 				mono_aot_get_trampoline_full (is_in ? "gsharedvt_trampoline" : "gsharedvt_out_trampoline", &tinfo);
 			else
 				mono_arch_get_gsharedvt_trampoline (&tinfo, FALSE);
+#ifdef HOST_NUTTX
+			if (!tinfo || !tinfo->code) {
+				g_print ("gsharedvt trampoline not available (no JIT on NuttX)\n");
+				return NULL;
+			}
+#endif
 			jinfo = create_jit_info_for_trampoline (method, tinfo);
 			mono_jit_info_table_add (jinfo);
 			if (is_in)
@@ -2692,6 +2702,8 @@ mono_jit_compile_method_with_opt (MonoMethod *method, guint32 opt, gboolean jit_
 	gboolean use_interp = FALSE;
 
 	error_init (error);
+
+/* JIT entry logging removed — was causing stack pressure with many throws */
 
 	if (mono_ee_features.force_use_interpreter && !jit_only)
 		use_interp = TRUE;
@@ -2828,8 +2840,18 @@ lookup_start:
 		code = mono_jit_compile_method_inner (method, opt, error);
 		unregister_method_for_compile (method);
 	}
-	if (!is_ok (error))
+	if (!is_ok (error)) {
+#ifdef HOST_NUTTX
+		{
+			char *mname = mono_method_full_name (method, TRUE);
+			char *msg = mono_error_get_message (error);
+			g_print ("JIT FAILED: %s — %s\n", mname, msg ? msg : "(no message)");
+			g_free (msg);
+			g_free (mname);
+		}
+#endif
 		return NULL;
+	}
 
 	if (!code && mono_llvm_only) {
 		printf ("AOT method not found in llvmonly mode: %s\n", mono_method_full_name (method, 1));
@@ -2849,6 +2871,8 @@ lookup_start:
 		g_assert (ji);
 	}
 #endif
+
+/* Verbose JIT logging stripped — kept JIT FAILED above for error diagnostics */
 
 	p = mono_create_ftnptr (code);
 

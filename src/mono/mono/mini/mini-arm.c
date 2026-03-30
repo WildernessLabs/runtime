@@ -337,7 +337,7 @@ static guint8*
 emit_call_seq (MonoCompile *cfg, guint8 *code)
 {
 	if (cfg->method->dynamic) {
-		ARM_LDR_IMM (code, ARMREG_IP, ARMREG_PC, 0);
+		ARM_LDR_IMM (code, ARMREG_IP, ARMREG_PC, ARMDISP_LDRPC);
 		ARM_B (code, 0);
 		*(gpointer*)code = NULL;
 		code += 4;
@@ -3763,6 +3763,14 @@ emit_thunk (guint8 *code, gconstpointer target)
 {
 	guint8 *p = code;
 
+#ifdef __thumb2__
+	/* Compact thunk: LDR.W ip,[PC,#4] + BX ip + NOP + literal = 12 bytes */
+	arm_ldr_lit ((void **)&code, ARMREG_IP, 4);
+	arm_bxis16 ((void **)&code, ARMREG_IP, 0);
+	arm_nop16 ((void **)&code, OP_NOP16);
+	*(guint32*)code = (guint32)(gsize)target | 1;
+	code += 4;
+#else
 	ARM_LDR_IMM (code, ARMREG_IP, ARMREG_PC, 0);
 	if (thumb_supported)
 		ARM_BX (code, ARMREG_IP);
@@ -3770,6 +3778,7 @@ emit_thunk (guint8 *code, gconstpointer target)
 		ARM_MOV_REG_REG (code, ARMREG_PC, ARMREG_IP);
 	*(guint32*)code = (guint32)(gsize)target;
 	code += 4;
+#endif
 	mono_arch_flush_icache (p, GPTRDIFF_TO_INT (code - p));
 }
 
@@ -3829,7 +3838,7 @@ handle_thunk (MonoCompile *cfg, guchar *code, const guchar *target)
 					/* Free entry */
 					target_thunk = p;
 					break;
-				} else if (((guint32*)p) [2] == (guint32)(gsize)target) {
+				} else if ((((guint32*)p) [2] & ~(guint32)1) == ((guint32)(gsize)target & ~(guint32)1)) {
 					/* Thunk already points to target */
 					target_thunk = p;
 					break;
@@ -3856,10 +3865,86 @@ handle_thunk (MonoCompile *cfg, guchar *code, const guchar *target)
 static void
 arm_patch_general (MonoCompile *cfg, guchar *code, const guchar *target)
 {
+#ifdef __thumb2__
+	/* Strip Thumb bit — instructions are always at even addresses */
+	code = (guchar *)((gsize)code & ~(gsize)1);
+	/* Skip IT (If-Then) instructions — Thumb2 ARM_BL_COND emits IT+BL,
+	 * but the JIT records the offset at the IT. Patch the BL that follows. */
+	{
+		guint16 hw = *(guint16 *)code;
+		if ((hw & 0xFF00) == 0xBF00 && (hw & 0x000F) != 0) {
+			/* IT instruction: 0xBFxx where low nibble != 0 */
+			code += 2;
+		}
+	}
+#endif
 	guint32 *code32 = (guint32*)code;
 	guint32 ins = *code32;
 	guint32 prim = (ins >> 25) & 7;
 	guint32 tval = GPOINTER_TO_UINT (target);
+
+#ifdef __thumb2__
+	/*
+	 * Thumb2 instruction patching.
+	 * 32-bit Thumb2 instructions are stored as two 16-bit halfwords.
+	 * On LE: lower 16 bits = first halfword (hw1), upper 16 bits = second halfword (hw2).
+	 */
+	{
+		guint16 hw1 = ins & 0xFFFF;
+		guint16 hw2 = (ins >> 16) & 0xFFFF;
+		const guchar *target_addr = (const guchar *)((gsize)target & ~(gsize)1);
+
+		if ((hw1 & 0xF800) == 0xF000) {
+			gint diff = GPTRDIFF_TO_INT (target_addr - code);
+			guint8 *p = code;
+			if ((hw2 & 0xD000) == 0x9000) {
+				/* B.W (T4) unconditional branch — ±16MB range */
+				if (diff >= -16777216 && diff <= 16777214) {
+					arm_brl32 ((void **)&p, diff, 0);
+					return;
+				}
+				handle_thunk (cfg, code, target);
+				return;
+			}
+			if ((hw2 & 0xD000) == 0xD000) {
+				/* BL (branch with link) — ±16MB range */
+				if (diff >= -16777216 && diff <= 16777214) {
+					arm_brl32 ((void **)&p, diff, 1);
+					return;
+				}
+				handle_thunk (cfg, code, target);
+				return;
+			}
+			if ((hw2 & 0xD000) == 0x8000) {
+				/* B<cond>.W (T3) conditional branch */
+				int cond = (hw1 >> 6) & 0xF;
+				arm_cbr32 ((void **)&p, cond, diff);
+				return;
+			}
+		}
+
+		/* 16-bit unconditional branch: 11100 imm11 */
+		if ((hw1 & 0xF800) == 0xE000) {
+			gint diff = GPTRDIFF_TO_INT (target_addr - code);
+			int imm = (diff - 4) >> 1;
+			guint16 *hw = (guint16 *)code;
+			*hw = 0xE000 | (imm & 0x7FF);
+			return;
+		}
+
+		/* 16-bit conditional branch: 1101 cond imm8 (not SVC/UDF) */
+		if ((hw1 & 0xF000) == 0xD000 && ((hw1 >> 8) & 0xF) < 0xE) {
+			gint diff = GPTRDIFF_TO_INT (target_addr - code);
+			int imm = (diff - 4) >> 1;
+			guint16 *hw = (guint16 *)code;
+			int cond = (hw1 >> 8) & 0xF;
+			*hw = 0xD000 | (cond << 8) | (imm & 0xFF);
+			return;
+		}
+
+		g_error ("arm_patch_general: unrecognized Thumb2 instruction 0x%08x at %p", ins, code);
+	}
+#endif
 
 	//g_print ("patching 0x%08x (0x%08x) to point to 0x%08x\n", code, ins, target);
 	if (prim == 5) { /* 101b */
@@ -4621,7 +4706,7 @@ mono_arch_output_basic_block (MonoCompile *cfg, MonoBasicBlock *bb)
 						g_assert (var->opcode == OP_REGOFFSET);
 						code = emit_ldr_imm (code, dreg, var->inst_basereg, var->inst_offset);
 					} else {
-						ARM_LDR_IMM (code, dreg, ARMREG_PC, 0);
+						ARM_LDR_IMM (code, dreg, ARMREG_PC, ARMDISP_LDRPC);
 						ARM_B (code, 0);
 						*(int*)code = (int)(gsize)ss_trigger_page;
 						code += 4;
@@ -4898,7 +4983,7 @@ mono_arch_output_basic_block (MonoCompile *cfg, MonoBasicBlock *bb)
 		case OP_AOTCONST:
 			/* Load the GOT offset */
 			mono_add_patch_info (cfg, offset, (MonoJumpInfoType)(gsize)ins->inst_i1, ins->inst_p0);
-			ARM_LDR_IMM (code, ins->dreg, ARMREG_PC, 0);
+			ARM_LDR_IMM (code, ins->dreg, ARMREG_PC, ARMDISP_LDRPC);
 			ARM_B (code, 0);
 			*(gpointer*)code = NULL;
 			code += 4;
@@ -4907,7 +4992,7 @@ mono_arch_output_basic_block (MonoCompile *cfg, MonoBasicBlock *bb)
 			break;
 		case OP_OBJC_GET_SELECTOR:
 			mono_add_patch_info (cfg, offset, MONO_PATCH_INFO_OBJC_SELECTOR_REF, ins->inst_p0);
-			ARM_LDR_IMM (code, ins->dreg, ARMREG_PC, 0);
+			ARM_LDR_IMM (code, ins->dreg, ARMREG_PC, ARMDISP_LDRPC);
 			ARM_B (code, 0);
 			*(gpointer*)code = NULL;
 			code += 4;
@@ -5070,7 +5155,7 @@ mono_arch_output_basic_block (MonoCompile *cfg, MonoBasicBlock *bb)
 				mono_add_patch_info (cfg, GPTRDIFF_TO_INT (code - cfg->native_code), MONO_PATCH_INFO_METHOD_JUMP, call_ins->method);
 
 				if (cfg->compile_aot) {
-					ARM_LDR_IMM (code, ARMREG_IP, ARMREG_PC, 0);
+					ARM_LDR_IMM (code, ARMREG_IP, ARMREG_PC, ARMDISP_LDRPC);
 					ARM_B (code, 0);
 					*(gpointer*)code = NULL;
 					code += 4;
@@ -5138,6 +5223,24 @@ mono_arch_output_basic_block (MonoCompile *cfg, MonoBasicBlock *bb)
 
 			if (IS_HARD_FLOAT)
 				code = emit_float_args (cfg, call, code, &max_len, &offset);
+	
+#ifdef __thumb2__
+			/*
+			 * Thumb2: MOV LR, PC doesn't set bit 0 (Thumb indicator),
+			 * so callee's POP {PC} would switch to ARM mode → UsageFault.
+			 * Load the target into IP and use BLX which correctly sets LR.
+			 */
+			if (!arm_is_imm12 (ins->inst_offset)) {
+				/* sreg1 might be IP, so save it first */
+				ARM_MOV_REG_REG (code, ARMREG_LR, ins->sreg1);
+				code = mono_arm_emit_load_imm (code, ARMREG_IP, ins->inst_offset);
+				ARM_ADD_REG_REG (code, ARMREG_IP, ARMREG_IP, ARMREG_LR);
+				ARM_LDR_IMM (code, ARMREG_IP, ARMREG_IP, 0);
+			} else {
+				ARM_LDR_IMM (code, ARMREG_IP, ins->sreg1, ins->inst_offset);
+			}
+			ARM_BLX_REG (code, ARMREG_IP);
+#else
 			if (!arm_is_imm12 (ins->inst_offset)) {
 				/* sreg1 might be IP */
 				ARM_MOV_REG_REG (code, ARMREG_LR, ins->sreg1);
@@ -5149,6 +5252,7 @@ mono_arch_output_basic_block (MonoCompile *cfg, MonoBasicBlock *bb)
 				ARM_MOV_REG_REG (code, ARMREG_LR, ARMREG_PC);
 				ARM_LDR_IMM (code, ARMREG_PC, ins->sreg1, ins->inst_offset);
 			}
+#endif
 			ins->flags |= MONO_INST_GC_CALLSITE;
 			ins->backend.pc_offset = GPTRDIFF_TO_INT (code - cfg->native_code);
 			code = emit_move_return_value (cfg, ins, code);
@@ -5263,8 +5367,12 @@ mono_arch_output_basic_block (MonoCompile *cfg, MonoBasicBlock *bb)
 				ARM_LDR_IMM (code, i, ARMREG_LR, MONO_STRUCT_OFFSET (DynCallArgs, regs) + (i * sizeof (target_mgreg_t)));
 
 			/* Make the call */
+#ifdef __thumb2__
+			ARM_BLX_REG (code, ARMREG_IP);
+#else
 			ARM_MOV_REG_REG (code, ARMREG_LR, ARMREG_PC);
 			ARM_MOV_REG_REG (code, ARMREG_PC, ARMREG_IP);
+#endif
 
 			/* Save result */
 			ARM_LDR_IMM (code, ARMREG_IP, var->inst_basereg, var->inst_offset);
@@ -5405,9 +5513,21 @@ mono_arch_output_basic_block (MonoCompile *cfg, MonoBasicBlock *bb)
 			 */
 			mono_add_patch_info (cfg, offset, MONO_PATCH_INFO_SWITCH, ins->inst_p0);
 			max_len += 4 * GPOINTER_TO_INT (ins->klass);
+#ifdef __thumb2__
+			/* ARM_SWITCH is 16 bytes vs 8 for ARM mode (len:12 in mdesc) */
+			max_len += 4;
+#endif
 			code = realloc_code (cfg, max_len);
+#ifdef __thumb2__
+			/* Thumb2: LDR PC,[PC,Rm,LSL#2] is impossible — PC as base
+			 * register forces the literal encoding.  Use ARM_SWITCH
+			 * which routes through IP: ADR IP,table; LDR IP,[IP,Rm,LSL#2]; BX IP.
+			 * Jump table starts at ip + ARMDISP_SWITCH (16 bytes). */
+			ARM_SWITCH (code, ins->sreg1);
+#else
 			ARM_LDR_REG_REG_SHIFT (code, ARMREG_PC, ARMREG_PC, ins->sreg1, ARMSHIFT_LSL, 2);
 			ARM_NOP (code);
+#endif
 			code += 4 * GPOINTER_TO_INT (ins->klass);
 			break;
 		case OP_CEQ:
@@ -6002,14 +6122,26 @@ mono_arch_patch_code_new (MonoCompile *cfg, guint8 *code, MonoJumpInfo *ji, gpoi
 
 	switch (ji->type) {
 	case MONO_PATCH_INFO_SWITCH: {
+#ifdef __thumb2__
+		/* ARM_SWITCH sequence is 16 bytes (ADR+LDR+BX+NOP), table follows */
+		gpointer *jt = (gpointer*)(ip + ARMDISP_SWITCH);
+#else
 		gpointer *jt = (gpointer*)(ip + 8);
+#endif
 		int i;
 		/* jt is the inlined jump table, 2 instructions after ip
 		 * In the normal case we store the absolute addresses,
 		 * otherwise the displacements.
 		 */
-		for (i = 0; i < ji->data.table->table_size; i++)
-			jt [i] = code + (int)(gsize)ji->data.table->table [i];
+		for (i = 0; i < ji->data.table->table_size; i++) {
+			gpointer addr = code + (int)(gsize)ji->data.table->table [i];
+#ifdef __thumb2__
+			/* BX needs bit 0 set to stay in Thumb mode */
+			jt [i] = (gpointer)((gsize)addr | 1);
+#else
+			jt [i] = addr;
+#endif
+		}
 		break;
 	}
 	case MONO_PATCH_INFO_IP:
@@ -6476,7 +6608,7 @@ mono_arch_emit_prolog (MonoCompile *cfg)
 
 		/* Initialize the variable from a GOT slot */
 		mono_add_patch_info (cfg, GPTRDIFF_TO_INT (code - cfg->native_code), MONO_PATCH_INFO_SEQ_POINT_INFO, cfg->method);
-		ARM_LDR_IMM (code, ARMREG_R0, ARMREG_PC, 0);
+		ARM_LDR_IMM (code, ARMREG_R0, ARMREG_PC, ARMDISP_LDRPC);
 		ARM_B (code, 0);
 		*(gpointer*)code = NULL;
 		code += 4;
@@ -6748,7 +6880,7 @@ mono_arch_emit_exceptions (MonoCompile *cfg)
 			exc_class = mono_class_load_from_name (mono_defaults.corlib, "System", patch_info->data.name);
 
 			ARM_MOV_REG_REG (code, ARMREG_R1, ARMREG_LR);
-			ARM_LDR_IMM (code, ARMREG_R0, ARMREG_PC, 0);
+			ARM_LDR_IMM (code, ARMREG_R0, ARMREG_PC, ARMDISP_LDRPC);
 			patch_info->type = MONO_PATCH_INFO_JIT_ICALL_ID;
 			patch_info->data.jit_icall_id = MONO_JIT_ICALL_mono_arch_throw_corlib_exception;
 			patch_info->ip.i = GPTRDIFF_TO_INT (code - cfg->native_code);
@@ -6832,9 +6964,24 @@ static arminstr_t *
 arm_emit_value_and_patch_ldr (arminstr_t *code, arminstr_t *target, guint32 value)
 {
 	guint32 delta = DISTANCE (target, code);
+#ifdef __thumb2__
+	/*
+	 * Thumb2 LDR.W Rt,[PC,#imm12]: PC = Align(instruction_address + 4, 4).
+	 * The imm12 is in bits [11:0] of the second halfword (bits [27:16] of LE 32-bit word).
+	 * Account for PC alignment: if target is not word-aligned, PC rounds down by 2.
+	 */
+	guint32 target_addr = (guint32)(gsize)target;
+	guint32 pc = (target_addr + 4) & ~(guint32)3;
+	guint32 code_addr = (guint32)(gsize)code;
+	delta = code_addr - pc;
+	g_assert (delta <= 0xFFF);
+	/* Clear old imm12 in second halfword, set new one */
+	*target = (*target & 0xF000FFFF) | (delta << 16);
+#else
 	delta -= 8;
 	g_assert (delta >= 0 && delta <= 0xFFF);
 	*target = *target | delta;
+#endif
 	*code = value;
 	return code + 1;
 }
@@ -7083,7 +7230,7 @@ mono_arch_build_imt_trampoline (MonoVTable *vtable, MonoIMTCheckItem **imt_entri
 
 	mono_tramp_info_register (mono_tramp_info_create (NULL, (guint8*)start, DISTANCE (start, code), NULL, unwind_ops), mem_manager);
 
-	return start;
+	return CODE_ADDR ((guint8 *)start);
 }
 
 host_mgreg_t
@@ -7146,7 +7293,7 @@ mono_arch_set_breakpoint (MonoJitInfo *ji, guint8 *ip)
 		int dreg = ARMREG_LR;
 
 		/* Read from another trigger page */
-		ARM_LDR_IMM (code, dreg, ARMREG_PC, 0);
+		ARM_LDR_IMM (code, dreg, ARMREG_PC, ARMDISP_LDRPC);
 		ARM_B (code, 0);
 		*(int*)code = (int)(gssize)bp_trigger_page;
 		code += 4;
@@ -7436,7 +7583,7 @@ emit_aotconst (MonoCompile *cfg, guint8 *code, int dreg, int patch_type, gpointe
 {
 	/* OP_AOTCONST */
 	mono_add_patch_info (cfg, GPTRDIFF_TO_INT (code - cfg->native_code), (MonoJumpInfoType)patch_type, data);
-	ARM_LDR_IMM (code, dreg, ARMREG_PC, 0);
+	ARM_LDR_IMM (code, dreg, ARMREG_PC, ARMDISP_LDRPC);
 	ARM_B (code, 0);
 	*(gpointer*)code = NULL;
 	code += 4;
@@ -7451,7 +7598,7 @@ mono_arm_emit_aotconst (gpointer ji_list, guint8 *code, guint8 *buf, int dreg, i
 	MonoJumpInfo **ji = (MonoJumpInfo**)ji_list;
 
 	*ji = mono_patch_info_list_prepend (*ji, GPTRDIFF_TO_INT (code - buf), (MonoJumpInfoType)patch_type, data);
-	ARM_LDR_IMM (code, dreg, ARMREG_PC, 0);
+	ARM_LDR_IMM (code, dreg, ARMREG_PC, ARMDISP_LDRPC);
 	ARM_B (code, 0);
 	*(gpointer*)code = NULL;
 	code += 4;

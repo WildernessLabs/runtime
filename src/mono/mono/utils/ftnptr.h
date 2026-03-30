@@ -34,6 +34,14 @@ typedef gpointer MonoFtnPtr;
 #define MINI_ADDR_TO_FTNPTR(addr) (MonoFtnPtr)ptrauth_sign_unauthenticated ((addr), ptrauth_key_function_pointer, NULL)
 
 #define MINI_FTNPTR_TO_ADDR(addr) ptrauth_strip ((addr), ptrauth_key_function_pointer)
+#elif defined(__thumb2__)
+/*
+ * Cortex-M (Thumb2-only): function pointers must have bit 0 set,
+ * otherwise BLX switches to ARM mode → UsageFault (INVSTATE).
+ * code_start stores raw addresses; tag when returning as ftnptr.
+ */
+#define MINI_ADDR_TO_FTNPTR(addr) ((MonoFtnPtr)((uintptr_t)(addr) | 1))
+#define MINI_FTNPTR_TO_ADDR(addr) ((gpointer)((uintptr_t)(addr) & ~(uintptr_t)1))
 #else
 #define MINI_ADDR_TO_FTNPTR(addr) ((MonoFtnPtr)(addr))
 #define MINI_FTNPTR_TO_ADDR(addr) ((gpointer)(addr))

@@ -224,7 +224,11 @@ mono_exceptions_init (void)
 		throw_exception_func = mono_aot_get_trampoline ("throw_exception");
 		rethrow_exception_func = mono_aot_get_trampoline ("rethrow_exception");
 		rethrow_preserve_exception_func = mono_aot_get_trampoline ("rethrow_preserve_exception");
-	} else if (!mono_llvm_only) {
+	} else if (!mono_llvm_only
+#ifdef HOST_NUTTX
+		   || TRUE /* NuttX interp-only still needs JIT exception trampolines for restore_context */
+#endif
+		   ) {
 		MonoTrampInfo *info;
 
 		restore_context_func = mono_arch_get_restore_context (&info, FALSE);

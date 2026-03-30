@@ -1085,6 +1085,8 @@ ves_icall_System_Runtime_CompilerServices_RuntimeHelpers_RunClassConstructor (Mo
 	MonoClass *klass;
 	MonoVTable *vtable;
 
+/* RunClassConstructor diagnostic logging removed */
+
 	MONO_CHECK_ARG_NULL (handle,);
 
 	klass = mono_class_from_mono_type_internal (handle);

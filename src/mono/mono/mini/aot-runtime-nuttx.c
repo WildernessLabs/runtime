@@ -149,7 +149,7 @@ mono_nuttx_get_interp_to_native_trampoline (MonoMethodSignature *sig)
 #define NUTTX_N2I_MAX_THUNKS 128
 
 /* Pool of ftndesc pointers — one per allocated thunk */
-static MonoFtnDesc *n2i_ftndesc_pool [NUTTX_N2I_MAX_THUNKS];
+static MonoFtnDesc *n2i_ftndesc_pool [NUTTX_N2I_MAX_THUNKS] __attribute__((used));
 static int n2i_next_thunk;
 
 /*
