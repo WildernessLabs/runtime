@@ -971,7 +971,7 @@ mono_arch_get_interp_to_native_trampoline (MonoTrampInfo **info)
 	if (info)
 		*info = mono_tramp_info_create ("interp_to_native_trampoline", start, GPTRDIFF_TO_UINT32 (code - start), ji, unwind_ops);
 
-	return start;
+	return MINI_ADDR_TO_FTNPTR (start);
 #else
 	g_assert_not_reached ();
 	return NULL;
@@ -1044,7 +1044,7 @@ mono_arch_get_native_to_interp_trampoline (MonoTrampInfo **info)
 	if (info)
 		*info = mono_tramp_info_create ("native_to_interp_trampoline", start, GPTRDIFF_TO_UINT32 (code - start), ji, unwind_ops);
 
-	return start;
+	return MINI_ADDR_TO_FTNPTR (start);
 #else
 	g_assert_not_reached ();
 	return NULL;

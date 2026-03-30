@@ -877,8 +877,18 @@ namespace System
         public static readonly object Missing = Reflection.Missing.Value;
 
         public static readonly MemberFilter FilterAttribute = FilterAttributeImpl!;
+#if MONO
+        // NuttX: lambdas generate a <>c display class whose .cctor triggers ArgumentException during early
+        // bootstrap (before Type is fully initialized). Use explicit static methods instead.
+        public static readonly MemberFilter FilterName = FilterNameOrdinal!;
+        public static readonly MemberFilter FilterNameIgnoreCase = FilterNameOrdinalIgnoreCase!;
+
+        private static bool FilterNameOrdinal(MemberInfo m, object c) => FilterNameImpl(m, c!, StringComparison.Ordinal);
+        private static bool FilterNameOrdinalIgnoreCase(MemberInfo m, object c) => FilterNameImpl(m, c!, StringComparison.OrdinalIgnoreCase);
+#else
         public static readonly MemberFilter FilterName = (m, c) => FilterNameImpl(m, c!, StringComparison.Ordinal);
         public static readonly MemberFilter FilterNameIgnoreCase = (m, c) => FilterNameImpl(m, c!, StringComparison.OrdinalIgnoreCase);
+#endif
 
         private const BindingFlags DefaultLookup = BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public;
         // DynamicallyAccessedMemberTypes.All keeps more data than what a member can use:

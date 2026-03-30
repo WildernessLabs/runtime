@@ -1814,11 +1814,11 @@ interp_to_native_trampoline (gpointer addr, gpointer ccontext)
 	get_interp_to_native_trampoline () (addr, ccontext);
 }
 
-#if defined(HOST_WASM)
+#if defined(HOST_WASM) || defined(HOST_NUTTX)
 typedef struct {
 	MonoPIFunc entry_func;
 	BuildArgsFromSigInfo *call_info;
-} WasmPInvokeCacheData;
+} PInvokeCacheData;
 #endif
 
 /* MONO_NO_OPTIMIZATION is needed due to usage of INTERP_PUSH_LMF_WITH_CTX. */
@@ -1850,17 +1850,21 @@ ves_pinvoke_method (
 
 	MONO_REQ_GC_UNSAFE_MODE;
 
-#if defined(HOST_WASM)
+#if defined(HOST_WASM) || defined(HOST_NUTTX)
 	/*
 	 * Use a per-signature entry function.
 	 * Cache it in imethod->data_items.
 	 * This is GC safe.
 	 */
 	MonoPIFunc entry_func = NULL;
-	WasmPInvokeCacheData *cache_data = (WasmPInvokeCacheData*)*cache;
+	PInvokeCacheData *cache_data = (PInvokeCacheData*)*cache;
 	if (!cache_data) {
-		cache_data = g_new0 (WasmPInvokeCacheData, 1);
+		cache_data = g_new0 (PInvokeCacheData, 1);
+#if defined(HOST_WASM)
 		cache_data->entry_func = (MonoPIFunc)mono_wasm_get_interp_to_native_trampoline (sig);
+#elif defined(HOST_NUTTX)
+		cache_data->entry_func = (MonoPIFunc)mono_nuttx_get_interp_to_native_trampoline (sig);
+#endif
 		cache_data->call_info = get_build_args_from_sig_info (get_default_mem_manager (), sig);
 		mono_memory_barrier ();
 		*cache = cache_data;
@@ -1899,7 +1903,7 @@ ves_pinvoke_method (
 	args = &ccontext;
 #else
 
-#if defined(HOST_WASM)
+#if defined(HOST_WASM) || defined(HOST_NUTTX)
 	BuildArgsFromSigInfo *call_info = cache_data->call_info;
 #else
 	BuildArgsFromSigInfo *call_info = NULL;
