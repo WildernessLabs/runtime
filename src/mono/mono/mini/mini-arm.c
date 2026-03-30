@@ -901,6 +901,18 @@ mono_arch_init (void)
 		thumb_supported = strstr (cpu_arch, "thumb") != NULL;
 		g_free (cpu_arch);
 	}
+
+#ifdef HOST_NUTTX
+	/* NuttX on Cortex-M7 (ARMv7E-M): hardware UDIV/SDIV is available.
+	 * The v7s_supported flag gates hardware divide in the JIT codegen
+	 * (OP_IDIV, OP_IREM, OP_IDIV_UN, OP_IREM_UN). Without it, the JIT
+	 * uses software emulation which has bugs on this platform. */
+	v5_supported = TRUE;
+	v6_supported = TRUE;
+	v7_supported = TRUE;
+	v7s_supported = TRUE;
+	thumb_supported = TRUE;
+#endif
 }
 
 /*
@@ -5532,48 +5544,89 @@ mono_arch_output_basic_block (MonoCompile *cfg, MonoBasicBlock *bb)
 			break;
 		case OP_CEQ:
 		case OP_ICEQ:
+#ifdef __thumb2__
+			/* Thumb2: use ITE block to avoid flag-clobbering 16-bit MOVS */
+			ARM_GET_CC (code, ins->dreg, ARMCOND_EQ);
+#else
 			ARM_MOV_REG_IMM8_COND (code, ins->dreg, 0, ARMCOND_NE);
 			ARM_MOV_REG_IMM8_COND (code, ins->dreg, 1, ARMCOND_EQ);
+#endif
 			break;
 		case OP_CLT:
 		case OP_ICLT:
+#ifdef __thumb2__
+			ARM_GET_CC (code, ins->dreg, ARMCOND_LT);
+#else
 			ARM_MOV_REG_IMM8 (code, ins->dreg, 0);
 			ARM_MOV_REG_IMM8_COND (code, ins->dreg, 1, ARMCOND_LT);
+#endif
 			break;
 		case OP_CLT_UN:
 		case OP_ICLT_UN:
+#ifdef __thumb2__
+			ARM_GET_CC (code, ins->dreg, ARMCOND_LO);
+#else
 			ARM_MOV_REG_IMM8 (code, ins->dreg, 0);
 			ARM_MOV_REG_IMM8_COND (code, ins->dreg, 1, ARMCOND_LO);
+#endif
 			break;
 		case OP_CGT:
 		case OP_ICGT:
+#ifdef __thumb2__
+			ARM_GET_CC (code, ins->dreg, ARMCOND_GT);
+#else
 			ARM_MOV_REG_IMM8 (code, ins->dreg, 0);
 			ARM_MOV_REG_IMM8_COND (code, ins->dreg, 1, ARMCOND_GT);
+#endif
 			break;
 		case OP_CGT_UN:
 		case OP_ICGT_UN:
+#ifdef __thumb2__
+			ARM_GET_CC (code, ins->dreg, ARMCOND_HI);
+#else
 			ARM_MOV_REG_IMM8 (code, ins->dreg, 0);
 			ARM_MOV_REG_IMM8_COND (code, ins->dreg, 1, ARMCOND_HI);
+#endif
 			break;
 		case OP_ICNEQ:
+#ifdef __thumb2__
+			ARM_GET_CC (code, ins->dreg, ARMCOND_NE);
+#else
 			ARM_MOV_REG_IMM8_COND (code, ins->dreg, 1, ARMCOND_NE);
 			ARM_MOV_REG_IMM8_COND (code, ins->dreg, 0, ARMCOND_EQ);
+#endif
 			break;
 		case OP_ICGE:
+#ifdef __thumb2__
+			ARM_GET_CC (code, ins->dreg, ARMCOND_GE);
+#else
 			ARM_MOV_REG_IMM8 (code, ins->dreg, 1);
 			ARM_MOV_REG_IMM8_COND (code, ins->dreg, 0, ARMCOND_LT);
+#endif
 			break;
 		case OP_ICLE:
+#ifdef __thumb2__
+			ARM_GET_CC (code, ins->dreg, ARMCOND_LE);
+#else
 			ARM_MOV_REG_IMM8 (code, ins->dreg, 1);
 			ARM_MOV_REG_IMM8_COND (code, ins->dreg, 0, ARMCOND_GT);
+#endif
 			break;
 		case OP_ICGE_UN:
+#ifdef __thumb2__
+			ARM_GET_CC (code, ins->dreg, ARMCOND_HS);
+#else
 			ARM_MOV_REG_IMM8 (code, ins->dreg, 1);
 			ARM_MOV_REG_IMM8_COND (code, ins->dreg, 0, ARMCOND_LO);
+#endif
 			break;
 		case OP_ICLE_UN:
+#ifdef __thumb2__
+			ARM_GET_CC (code, ins->dreg, ARMCOND_LS);
+#else
 			ARM_MOV_REG_IMM8 (code, ins->dreg, 1);
 			ARM_MOV_REG_IMM8_COND (code, ins->dreg, 0, ARMCOND_HI);
+#endif
 			break;
 		case OP_COND_EXC_EQ:
 		case OP_COND_EXC_NE_UN:
@@ -5817,7 +5870,11 @@ mono_arch_output_basic_block (MonoCompile *cfg, MonoBasicBlock *bb)
 				ARM_CMPD (code, ins->sreg1, ins->sreg2);
 				ARM_FMSTAT (code);
 			}
+#ifdef __thumb2__
+			ARM_MOV_REG_IMM8_COND (code, ins->dreg, 0, ARMCOND_AL);
+#else
 			ARM_MOV_REG_IMM8 (code, ins->dreg, 0);
+#endif
 			ARM_MOV_REG_IMM8_COND (code, ins->dreg, 1, ARMCOND_MI);
 			break;
 		case OP_FCLT_UN:
@@ -5825,7 +5882,11 @@ mono_arch_output_basic_block (MonoCompile *cfg, MonoBasicBlock *bb)
 				ARM_CMPD (code, ins->sreg1, ins->sreg2);
 				ARM_FMSTAT (code);
 			}
+#ifdef __thumb2__
+			ARM_MOV_REG_IMM8_COND (code, ins->dreg, 0, ARMCOND_AL);
+#else
 			ARM_MOV_REG_IMM8 (code, ins->dreg, 0);
+#endif
 			ARM_MOV_REG_IMM8_COND (code, ins->dreg, 1, ARMCOND_MI);
 			ARM_MOV_REG_IMM8_COND (code, ins->dreg, 1, ARMCOND_VS);
 			break;
@@ -5834,7 +5895,11 @@ mono_arch_output_basic_block (MonoCompile *cfg, MonoBasicBlock *bb)
 				ARM_CMPD (code, ins->sreg2, ins->sreg1);
 				ARM_FMSTAT (code);
 			}
+#ifdef __thumb2__
+			ARM_MOV_REG_IMM8_COND (code, ins->dreg, 0, ARMCOND_AL);
+#else
 			ARM_MOV_REG_IMM8 (code, ins->dreg, 0);
+#endif
 			ARM_MOV_REG_IMM8_COND (code, ins->dreg, 1, ARMCOND_MI);
 			break;
 		case OP_FCGT_UN:
@@ -5842,7 +5907,11 @@ mono_arch_output_basic_block (MonoCompile *cfg, MonoBasicBlock *bb)
 				ARM_CMPD (code, ins->sreg2, ins->sreg1);
 				ARM_FMSTAT (code);
 			}
+#ifdef __thumb2__
+			ARM_MOV_REG_IMM8_COND (code, ins->dreg, 0, ARMCOND_AL);
+#else
 			ARM_MOV_REG_IMM8 (code, ins->dreg, 0);
+#endif
 			ARM_MOV_REG_IMM8_COND (code, ins->dreg, 1, ARMCOND_MI);
 			ARM_MOV_REG_IMM8_COND (code, ins->dreg, 1, ARMCOND_VS);
 			break;
@@ -5859,7 +5928,11 @@ mono_arch_output_basic_block (MonoCompile *cfg, MonoBasicBlock *bb)
 				ARM_CMPD (code, ins->sreg1, ins->sreg2);
 				ARM_FMSTAT (code);
 			}
+#ifdef __thumb2__
+			ARM_MOV_REG_IMM8_COND (code, ins->dreg, 1, ARMCOND_AL);
+#else
 			ARM_MOV_REG_IMM8 (code, ins->dreg, 1);
+#endif
 			ARM_MOV_REG_IMM8_COND (code, ins->dreg, 0, ARMCOND_MI);
 			break;
 		case OP_FCLE:
@@ -5867,7 +5940,11 @@ mono_arch_output_basic_block (MonoCompile *cfg, MonoBasicBlock *bb)
 				ARM_CMPD (code, ins->sreg2, ins->sreg1);
 				ARM_FMSTAT (code);
 			}
+#ifdef __thumb2__
+			ARM_MOV_REG_IMM8_COND (code, ins->dreg, 1, ARMCOND_AL);
+#else
 			ARM_MOV_REG_IMM8 (code, ins->dreg, 1);
+#endif
 			ARM_MOV_REG_IMM8_COND (code, ins->dreg, 0, ARMCOND_MI);
 			break;
 
@@ -5991,7 +6068,11 @@ mono_arch_output_basic_block (MonoCompile *cfg, MonoBasicBlock *bb)
 				ARM_CMPS (code, ins->sreg1, ins->sreg2);
 				ARM_FMSTAT (code);
 			}
+#ifdef __thumb2__
+			ARM_MOV_REG_IMM8_COND (code, ins->dreg, 0, ARMCOND_AL);
+#else
 			ARM_MOV_REG_IMM8 (code, ins->dreg, 0);
+#endif
 			ARM_MOV_REG_IMM8_COND (code, ins->dreg, 1, ARMCOND_MI);
 			break;
 		case OP_RCLT_UN:
@@ -5999,7 +6080,11 @@ mono_arch_output_basic_block (MonoCompile *cfg, MonoBasicBlock *bb)
 				ARM_CMPS (code, ins->sreg1, ins->sreg2);
 				ARM_FMSTAT (code);
 			}
+#ifdef __thumb2__
+			ARM_MOV_REG_IMM8_COND (code, ins->dreg, 0, ARMCOND_AL);
+#else
 			ARM_MOV_REG_IMM8 (code, ins->dreg, 0);
+#endif
 			ARM_MOV_REG_IMM8_COND (code, ins->dreg, 1, ARMCOND_MI);
 			ARM_MOV_REG_IMM8_COND (code, ins->dreg, 1, ARMCOND_VS);
 			break;
@@ -6008,7 +6093,11 @@ mono_arch_output_basic_block (MonoCompile *cfg, MonoBasicBlock *bb)
 				ARM_CMPS (code, ins->sreg2, ins->sreg1);
 				ARM_FMSTAT (code);
 			}
+#ifdef __thumb2__
+			ARM_MOV_REG_IMM8_COND (code, ins->dreg, 0, ARMCOND_AL);
+#else
 			ARM_MOV_REG_IMM8 (code, ins->dreg, 0);
+#endif
 			ARM_MOV_REG_IMM8_COND (code, ins->dreg, 1, ARMCOND_MI);
 			break;
 		case OP_RCGT_UN:
@@ -6016,7 +6105,11 @@ mono_arch_output_basic_block (MonoCompile *cfg, MonoBasicBlock *bb)
 				ARM_CMPS (code, ins->sreg2, ins->sreg1);
 				ARM_FMSTAT (code);
 			}
+#ifdef __thumb2__
+			ARM_MOV_REG_IMM8_COND (code, ins->dreg, 0, ARMCOND_AL);
+#else
 			ARM_MOV_REG_IMM8 (code, ins->dreg, 0);
+#endif
 			ARM_MOV_REG_IMM8_COND (code, ins->dreg, 1, ARMCOND_MI);
 			ARM_MOV_REG_IMM8_COND (code, ins->dreg, 1, ARMCOND_VS);
 			break;
@@ -6033,7 +6126,11 @@ mono_arch_output_basic_block (MonoCompile *cfg, MonoBasicBlock *bb)
 				ARM_CMPS (code, ins->sreg1, ins->sreg2);
 				ARM_FMSTAT (code);
 			}
+#ifdef __thumb2__
+			ARM_MOV_REG_IMM8_COND (code, ins->dreg, 1, ARMCOND_AL);
+#else
 			ARM_MOV_REG_IMM8 (code, ins->dreg, 1);
+#endif
 			ARM_MOV_REG_IMM8_COND (code, ins->dreg, 0, ARMCOND_MI);
 			break;
 		case OP_RCLE:
@@ -6041,7 +6138,11 @@ mono_arch_output_basic_block (MonoCompile *cfg, MonoBasicBlock *bb)
 				ARM_CMPS (code, ins->sreg2, ins->sreg1);
 				ARM_FMSTAT (code);
 			}
+#ifdef __thumb2__
+			ARM_MOV_REG_IMM8_COND (code, ins->dreg, 1, ARMCOND_AL);
+#else
 			ARM_MOV_REG_IMM8 (code, ins->dreg, 1);
+#endif
 			ARM_MOV_REG_IMM8_COND (code, ins->dreg, 0, ARMCOND_MI);
 			break;
 
