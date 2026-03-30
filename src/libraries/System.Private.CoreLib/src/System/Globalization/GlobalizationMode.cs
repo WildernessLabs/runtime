@@ -12,11 +12,11 @@ namespace System.Globalization
         // validate this implementation detail.
         private static partial class Settings
         {
-            internal static bool Invariant { get; } = AppContextConfigHelper.GetBooleanConfig("System.Globalization.Invariant", "DOTNET_SYSTEM_GLOBALIZATION_INVARIANT");
+            internal static bool Invariant { get; } = true; // NuttX: hardcode invariant — no ICU, and the AppContextConfigHelper path triggers a circular .cctor bootstrap (Utf8StringMarshaller → Encoding.UTF8 → GlobalizationMode)
 #if TARGET_MACCATALYST || TARGET_IOS || TARGET_TVOS
             internal static bool Hybrid { get; } = true;
 #endif
-            internal static bool PredefinedCulturesOnly { get; } = AppContextConfigHelper.GetBooleanConfig("System.Globalization.PredefinedCulturesOnly", "DOTNET_SYSTEM_GLOBALIZATION_PREDEFINED_CULTURES_ONLY", GlobalizationMode.Invariant);
+            internal static bool PredefinedCulturesOnly { get; } = true; // NuttX: hardcode — same bootstrap reason as Invariant
         }
 
         // Note: Invariant=true and Invariant=false are substituted at different levels in the ILLink.Substitutions file.

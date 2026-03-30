@@ -189,10 +189,23 @@ namespace System
         internal static unsafe void Setup(char** pNames, uint* pNameLengths, char** pValues, uint* pValueLengths, int count)
         {
             Debug.Assert(s_dataStore == null, "s_dataStore is not expected to be inited before Setup is called");
-            s_dataStore = new Dictionary<string, object?>(count);
-            for (int i = 0; i < count; i++)
+            try
             {
-                s_dataStore.Add(new string(pNames[i], 0, (int)pNameLengths[i]), new string(pValues[i], 0, (int)pValueLengths[i]));
+                s_dataStore = new Dictionary<string, object?>(count);
+                for (int i = 0; i < count; i++)
+                {
+                    s_dataStore.Add(new string(pNames[i], 0, (int)pNameLengths[i]), new string(pValues[i], 0, (int)pValueLengths[i]));
+                }
+            }
+            catch
+            {
+                // NuttX/ARM JIT: Dictionary.TryInsert can throw OverflowException due to a codegen
+                // issue on Thumb2. Fall back to an empty store — critical properties (Invariant,
+                // UseSystemResourceKeys) are hardcoded in CoreLib and don't depend on AppContext.
+                // Must use unconditional '=' (not '??=') because s_dataStore was already
+                // assigned before the exception; the partially-populated Dictionary has
+                // corrupted internal state causing IndexOutOfRangeException in FindValue.
+                s_dataStore = new Dictionary<string, object?>();
             }
         }
 #elif !NATIVEAOT
