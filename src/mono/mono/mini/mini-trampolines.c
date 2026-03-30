@@ -779,6 +779,8 @@ mono_magic_trampoline (host_mgreg_t *regs, guint8 *code, gpointer arg, guint8* t
 
 	UnlockedIncrement (&trampoline_calls);
 
+/* TRAMP diagnostic logging removed */
+
 	res = common_call_trampoline (regs, code, (MonoMethod *)arg, NULL, NULL, error);
 	if (!is_ok (error)) {
 		mono_error_set_pending_exception (error);
@@ -1216,7 +1218,7 @@ mono_trampolines_init (void)
 {
 	mono_os_mutex_init_recursive (&trampolines_mutex);
 	gboolean disable_tramps = FALSE;
-#if TARGET_WASM || HOST_NUTTX
+#if TARGET_WASM
 	disable_tramps = TRUE;
 #endif
 

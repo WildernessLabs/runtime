@@ -3,6 +3,8 @@
 //
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
+/* Thumb2: VFP macros are provided by thumb-codegen.h (included via arm-codegen.h) */
+#ifndef __thumb2__
 #ifndef __MONO_ARM_VFP_CODEGEN_H__
 #define __MONO_ARM_VFP_CODEGEN_H__
 
@@ -245,4 +247,5 @@ enum {
 	ARM_EMIT((p), ARM_DEF_FSITOD (ARMCOND_AL, (dreg) >> 1, (dreg) & 1, (sreg) >> 1, (sreg) & 1))
 
 #endif /* __MONO_ARM_VFP_CODEGEN_H__ */
+#endif /* !__thumb2__ */
 

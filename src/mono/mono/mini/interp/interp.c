@@ -1814,7 +1814,7 @@ interp_to_native_trampoline (gpointer addr, gpointer ccontext)
 	get_interp_to_native_trampoline () (addr, ccontext);
 }
 
-#if defined(HOST_WASM) || defined(__NuttX__)
+#if defined(HOST_WASM)
 typedef struct {
 	MonoPIFunc entry_func;
 	BuildArgsFromSigInfo *call_info;
@@ -1850,7 +1850,7 @@ ves_pinvoke_method (
 
 	MONO_REQ_GC_UNSAFE_MODE;
 
-#if defined(HOST_WASM) || defined(__NuttX__)
+#if defined(HOST_WASM)
 	/*
 	 * Use a per-signature entry function.
 	 * Cache it in imethod->data_items.
@@ -1860,11 +1860,7 @@ ves_pinvoke_method (
 	WasmPInvokeCacheData *cache_data = (WasmPInvokeCacheData*)*cache;
 	if (!cache_data) {
 		cache_data = g_new0 (WasmPInvokeCacheData, 1);
-#ifdef HOST_WASM
 		cache_data->entry_func = (MonoPIFunc)mono_wasm_get_interp_to_native_trampoline (sig);
-#else
-		cache_data->entry_func = (MonoPIFunc)mono_nuttx_get_interp_to_native_trampoline (sig);
-#endif
 		cache_data->call_info = get_build_args_from_sig_info (get_default_mem_manager (), sig);
 		mono_memory_barrier ();
 		*cache = cache_data;
@@ -1903,7 +1899,7 @@ ves_pinvoke_method (
 	args = &ccontext;
 #else
 
-#if defined(HOST_WASM) || defined(__NuttX__)
+#if defined(HOST_WASM)
 	BuildArgsFromSigInfo *call_info = cache_data->call_info;
 #else
 	BuildArgsFromSigInfo *call_info = NULL;
@@ -2296,19 +2292,6 @@ dump_args (InterpFrame *inv)
 static MONO_NEVER_INLINE MonoObject*
 interp_runtime_invoke (MonoMethod *method, void *obj, void **params, MonoObject **exc, MonoError *error)
 {
-#ifdef __NuttX__
-	static int nuttx_invoke_depth = 0;
-	static int nuttx_invoke_max_depth = 0;
-	nuttx_invoke_depth++;
-	if (nuttx_invoke_depth > nuttx_invoke_max_depth) {
-		nuttx_invoke_max_depth = nuttx_invoke_depth;
-		if (nuttx_invoke_max_depth <= 10 || nuttx_invoke_max_depth % 20 == 0) {
-			g_warning ("interp_runtime_invoke depth=%d method=%s",
-				nuttx_invoke_depth,
-				method ? mono_method_full_name (method, TRUE) : "?");
-		}
-	}
-#endif
 	ThreadContext *context = get_context ();
 	MonoMethodSignature *sig = mono_method_signature_internal (method);
 	stackval *sp = (stackval*)context->stack_pointer;
@@ -2360,14 +2343,8 @@ interp_runtime_invoke (MonoMethod *method, void *obj, void **params, MonoObject 
 		 */
 		if (mono_aot_mode == MONO_AOT_MODE_LLVMONLY_INTERP)
 			mono_llvm_start_native_unwind ();
-#ifdef __NuttX__
-		nuttx_invoke_depth--;
-#endif
 		return NULL;
 	}
-#ifdef __NuttX__
-	nuttx_invoke_depth--;
-#endif
 	// The return value is at the bottom of the stack
 	return frame.stack->data.o;
 }

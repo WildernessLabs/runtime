@@ -284,19 +284,36 @@ MONO_RESTORE_WARNING
 	/* Make the call */
 	if (aot) {
 		ji = mono_patch_info_list_prepend (ji, GPTRDIFF_TO_INT (code - buf), MONO_PATCH_INFO_JIT_ICALL_ADDR, GUINT_TO_POINTER (MONO_JIT_ICALL_mono_arm_start_gsharedvt_call));
+#ifdef __thumb2__
+		ARM_LOAD_RELPC (code, ARMREG_IP);
+		*(gpointer*)code = NULL;
+		code += 4;
+		ARM_LDR_REG_REG (code, ARMREG_IP, ARMREG_PC, ARMREG_IP);
+#else
 		ARM_LDR_IMM (code, ARMREG_IP, ARMREG_PC, 0);
 		ARM_B (code, 0);
 		*(gpointer*)code = NULL;
 		code += 4;
 		ARM_LDR_REG_REG (code, ARMREG_IP, ARMREG_PC, ARMREG_IP);
+#endif
 	} else {
+#ifdef __thumb2__
+		ARM_LOAD_RELPC (code, ARMREG_IP);
+		*(gpointer*)code = (gpointer)mono_arm_start_gsharedvt_call;
+		code += 4;
+#else
 		ARM_LDR_IMM (code, ARMREG_IP, ARMREG_PC, 0);
 		ARM_B (code, 0);
 		*(gpointer*)code = (gpointer)mono_arm_start_gsharedvt_call;
 		code += 4;
+#endif
 	}
+#ifdef __thumb2__
+	ARM_CALL_REG (code, ARMREG_IP);
+#else
 	ARM_MOV_REG_REG (code, ARMREG_LR, ARMREG_PC);
 	code = emit_bx (code, ARMREG_IP);
+#endif
 	/* Clean up stack */
 	ARM_ADD_REG_IMM8 (code, ARMREG_SP, ARMREG_SP, args_size);
 
@@ -321,10 +338,18 @@ MONO_RESTORE_WARNING
 	ARM_LDR_IMM (code, ARMREG_IP, ARMREG_IP, MONO_STRUCT_OFFSET (GSharedVtCallInfo, addr));
 #endif
 	/* mono_arch_find_imt_method () depends on this */
+#ifdef __thumb2__
+	/* Thumb2: LR = PC + 10 to skip past ORR(4) + BX(2) + literal(4) */
+	ARM_ADD_REG_IMM8 (code, ARMREG_LR, ARMREG_PC, 10);
+	ARM_BX (code, ARMREG_IP);
+	*((gpointer*)code) = NULL;
+	code += 4;
+#else
 	ARM_ADD_REG_IMM8 (code, ARMREG_LR, ARMREG_PC, 4);
 	ARM_BX (code, ARMREG_IP);
 	*((gpointer*)code) = NULL;
 	code += 4;
+#endif
 
 	br_ret_index = 0;
 
@@ -546,7 +571,7 @@ MONO_RESTORE_WARNING
 		*info = mono_tramp_info_create ("gsharedvt_trampoline", buf, GPTRDIFF_TO_UINT32 (code - buf), ji, unwind_ops);
 
 	mono_arch_flush_icache (buf, GPTRDIFF_TO_INT (code - buf));
-	return buf;
+	return CODE_ADDR (buf);
 }
 
 #else
@@ -554,8 +579,15 @@ MONO_RESTORE_WARNING
 gpointer
 mono_arch_get_gsharedvt_trampoline (MonoTrampInfo **info, gboolean aot)
 {
+#ifdef HOST_NUTTX
+	/* NuttX: no JIT, return NULL — caller must handle gracefully */
+	if (info)
+		*info = NULL;
+	return NULL;
+#else
 	g_assert_not_reached ();
 	return NULL;
+#endif
 }
 
 #endif

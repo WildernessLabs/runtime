@@ -6,6 +6,11 @@
  * Licensed under the MIT license. See LICENSE file in the project root for full license information.
  */
 
+/* Thumb2 targets: use thumb-codegen.h which redefines all ARM_xxx macros
+ * with correct Thumb2 encodings.  The entire A32 header below is skipped. */
+#ifdef __thumb2__
+# include <mono/arch/arm/thumb-codegen.h>
+#else
 
 #ifndef ARM_H
 #define ARM_H
@@ -256,6 +261,13 @@ typedef struct {
 
 #define ARM_BLX_REG_COND(p, cond, reg) ARM_EMIT(p, ARM_DEF_BX(reg, 3, cond))
 #define ARM_BLX_REG(p, reg) ARM_BLX_REG_COND((p), ARMCOND_AL, (reg))
+
+/* Set Thumb bit on a JIT code pointer for Thumb2 targets */
+#ifdef __thumb2__
+#define ARM_CALL_TARGET(c) c = (guint8 *) (((uintptr_t) c) | 0x1)
+#else
+#define ARM_CALL_TARGET(c) ((void)(c))
+#endif
 
 /* Data Processing Instructions - there are 3 types. */
 
@@ -1120,9 +1132,57 @@ typedef enum {
 
 #define ARM_STREX_REG(p, rd, rt, rn) ARM_EMIT ((p), ((ARMCOND_AL << 28) | (0xc << 21) | (0x0 << 20) | ((rn) << 16) | ((rd) << 12)) | (0xf << 8) | (0x9 << 4) | ((rt) << 0))
 
+/* PC-relative load displacement: 0 for A32 (PC = instruction + 8),
+ * 4 for Thumb2 (defined in thumb-codegen.h). */
+#define ARMDISP_LDRPC	0
+
+#define ARM_LOAD_RELPC(p, r) \
+	do {							\
+		ARM_LDR_IMM (p, r, ARMREG_PC, 0);		\
+		ARM_B (p, 0);					\
+	} while (0)
+#define ARM_RELPC_OFFSET	8	/* Size of ARM_LOAD_RELPC sequence */
+
+#define ARM_CALL_REG(p, r) \
+	do { \
+		ARM_MOV_REG_REG (p, ARMREG_LR, ARMREG_PC);	\
+		p = emit_bx (p, r);				\
+	} while (0)
+
+#define ARM_JUMP_REG_PARM(p, r, addr)			\
+	do {						\
+		ARM_LDR_IMM(p, r, ARMREG_PC, 0);	\
+		p = emit_bx(p, r);			\
+		*(guint32 *)p = (guint32)(gsize)addr;	\
+		p += 4;					\
+	} while (0)
+
+#define ARM_JUMP_REG_PARMA(p, r1, arg, addr)		\
+	do {						\
+		ARM_LDR_IMM(p, r1, ARMREG_PC, 4);	\
+		ARM_LDR_IMM(p, ARMREG_PC, ARMREG_PC, 0);\
+		*(guint32 *)p = (guint32)(gsize) arg;	\
+		p += 4;					\
+		*(guint32 *)p = (guint32)(gsize) addr;	\
+		p += 4;					\
+	} while (0)
+
+#define ARM_JUMP_REG_PARM2(p, r1, arg, addr)		\
+	do {						\
+		ARM_LDR_IMM(p, r1, ARMREG_PC, 0);	\
+		ARM_LDR_IMM(p, ARMREG_PC, ARMREG_PC, 0);\
+		*(guint32 *)p = (guint32)(gsize) arg;	\
+		p += 4;					\
+		*(guint32 *)p = (guint32)(gsize) addr;	\
+		p += 4;					\
+	} while (0)
+
+#define CODE_ADDR(x) (x)
+
 #ifdef __cplusplus
 }
 #endif
 
 #endif /* ARM_H */
+#endif /* !__thumb2__ (A32 path) */
 

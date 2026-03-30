@@ -42,7 +42,7 @@
 #include "mono/utils/mono-compiler.h"
 #include "mono/utils/mono-tls-inline.h"
 
-#ifndef DISABLE_JIT
+#if !defined(DISABLE_JIT) || (defined(HOST_NUTTX) && defined(__thumb2__))
 
 /*
  * arch_get_restore_context:
@@ -73,13 +73,25 @@ mono_arch_get_restore_context (MonoTrampInfo **info, gboolean aot)
 		ARM_FLDMD (code, ARM_VFP_D0, 16, ARMREG_IP);
 	}
 
-	/* move pc to PC */
+#ifndef __thumb2__
+	/* A32: move pc to regs[15], then LDM all 16 registers including PC */
 	ARM_LDR_IMM (code, ARMREG_IP, ctx_reg, MONO_STRUCT_OFFSET (MonoContext, pc));
 	ARM_STR_IMM (code, ARMREG_IP, ctx_reg, MONO_STRUCT_OFFSET (MonoContext, regs) + (ARMREG_PC * sizeof (target_mgreg_t)));
 
 	/* restore everything */
 	ARM_ADD_REG_IMM8 (code, ARMREG_IP, ctx_reg, MONO_STRUCT_OFFSET(MonoContext, regs));
 	ARM_LDM (code, ARMREG_IP, 0xffff);
+#else
+	/* Thumb2: can't LDM to PC with interworking from arbitrary address.
+	 * Restore SP, load target PC with Thumb bit set, restore r0-r11, then BLX. */
+	ARM_LDR_IMM (code, ARMREG_SP, ctx_reg, MONO_STRUCT_OFFSET (MonoContext, regs) + (ARMREG_SP * sizeof (target_mgreg_t)));
+	ARM_LDR_IMM (code, ARMREG_LR, ctx_reg, MONO_STRUCT_OFFSET_CONSTANT (MonoContext, pc));
+	ARM_MOV_REG_REG (code, ARMREG_IP, ARMREG_LR);
+	ARM_ORR_REG_IMM8 (code, ARMREG_IP, ARMREG_IP, 1); /* set Thumb bit (ORR is idempotent if already set) */
+	ARM_ADD_REG_IMM8 (code, ARMREG_R1, ctx_reg, MONO_STRUCT_OFFSET (MonoContext, regs));
+	ARM_LDM (code, ARMREG_R1, 0xfff); /* r0-r11 */
+	ARM_BLX_REG (code, ARMREG_IP);
+#endif
 
 	/* never reached */
 	ARM_DBRK (code);
@@ -91,6 +103,8 @@ mono_arch_get_restore_context (MonoTrampInfo **info, gboolean aot)
 
 	if (info)
 		*info = mono_tramp_info_create ("restore_context", start, GPTRDIFF_TO_UINT32 (code - start), ji, unwind_ops);
+
+	ARM_CALL_TARGET (start);
 
 	return start;
 }
@@ -127,13 +141,25 @@ mono_arch_get_call_filter (MonoTrampInfo **info, gboolean aot)
 	ARM_LDM (code, ARMREG_LR, MONO_ARM_REGSAVE_MASK);
 	/* call handler at eip (r1) and set the first arg with the exception (r2) */
 	ARM_MOV_REG_REG (code, ARMREG_R0, ARMREG_R2);
-	ARM_MOV_REG_REG (code, ARMREG_LR, ARMREG_PC);
-	ARM_MOV_REG_REG (code, ARMREG_PC, ARMREG_R1);
+#ifdef __thumb2__
+	ARM_BLX_REG (code, ARMREG_R1);
+#else
+	if (mono_arm_thumb_supported ()) {
+		ARM_BLX_REG (code, ARMREG_R1);
+	} else {
+		ARM_MOV_REG_REG (code, ARMREG_LR, ARMREG_PC);
+		ARM_MOV_REG_REG (code, ARMREG_PC, ARMREG_R1);
+	}
+#endif
 
 	ARM_ADD_REG_IMM8 (code, ARMREG_SP, ARMREG_SP, 8);
 
 	/* epilog */
+#ifndef __thumb2__
 	ARM_POP_NWB (code, 0xff0 | ((1 << ARMREG_SP) | (1 << ARMREG_PC)));
+#else
+	ARM_POP (code, 0xff0 | ((1 << ARMREG_IP) | (1 << ARMREG_PC)));
+#endif
 
 	g_assert ((code - start) < 320);
 
@@ -143,10 +169,12 @@ mono_arch_get_call_filter (MonoTrampInfo **info, gboolean aot)
 	if (info)
 		*info = mono_tramp_info_create ("call_filter", start, GPTRDIFF_TO_UINT32 (code - start), ji, unwind_ops);
 
+	ARM_CALL_TARGET (start);
+
 	return start;
 }
 
-#endif /* DISABLE_JIT */
+#endif /* !DISABLE_JIT || (HOST_NUTTX && __thumb2__) */
 
 void
 mono_arm_throw_exception (MonoObject *exc, host_mgreg_t pc, host_mgreg_t sp, host_mgreg_t *int_regs, gdouble *fp_regs, gboolean preserve_ips)
@@ -209,7 +237,7 @@ mono_arm_resume_unwind (guint32 dummy1, host_mgreg_t pc, host_mgreg_t sp, host_m
 	mono_resume_unwind (&ctx);
 }
 
-#ifndef DISABLE_JIT
+#if !defined(DISABLE_JIT) || (defined(HOST_NUTTX) && defined(__thumb2__))
 
 /**
  * get_throw_trampoline:
@@ -272,12 +300,6 @@ get_throw_trampoline (int size, gboolean corlib, gboolean rethrow, gboolean llvm
 	if (corlib) {
 		/* The caller ip is already in R1 */
 		if (llvm) {
-			/*
-			 * The address passed by llvm might point to before the call,
-			 * thus outside the eh range recorded by llvm. Use the return
-			 * address instead.
-			 * FIXME: Do this on more platforms.
-			 */
 			ARM_MOV_REG_REG (code, ARMREG_R1, ARMREG_LR); /* caller ip */
 		}
 	} else {
@@ -299,6 +321,7 @@ get_throw_trampoline (int size, gboolean corlib, gboolean rethrow, gboolean llvm
 		ARM_STR_IMM (code, ARMREG_LR, ARMREG_SP, 0);
 	}
 
+#ifndef __thumb2__
 	if (aot) {
 		MonoJitICallId icall_id;
 
@@ -310,7 +333,7 @@ get_throw_trampoline (int size, gboolean corlib, gboolean rethrow, gboolean llvm
 			icall_id = MONO_JIT_ICALL_mono_arm_throw_exception;
 
 		ji = mono_patch_info_list_prepend (ji, GPTRDIFF_TO_INT (code - start), MONO_PATCH_INFO_JIT_ICALL_ADDR, GUINT_TO_POINTER (icall_id));
-		ARM_LDR_IMM (code, ARMREG_IP, ARMREG_PC, 0);
+		ARM_LDR_IMM (code, ARMREG_IP, ARMREG_PC, ARMDISP_LDRPC);
 		ARM_B (code, 0);
 		*(gpointer*)(gpointer)code = NULL;
 		code += 4;
@@ -318,8 +341,18 @@ get_throw_trampoline (int size, gboolean corlib, gboolean rethrow, gboolean llvm
 	} else {
 		code = mono_arm_emit_load_imm (code, ARMREG_IP, GPOINTER_TO_UINT (resume_unwind ? (gpointer)mono_arm_resume_unwind : (corlib ? (gpointer)mono_arm_throw_exception_by_token : (gpointer)mono_arm_throw_exception)));
 	}
-	ARM_MOV_REG_REG (code, ARMREG_LR, ARMREG_PC);
-	ARM_MOV_REG_REG (code, ARMREG_PC, ARMREG_IP);
+	if (mono_arm_thumb_supported ()) {
+		ARM_BLX_REG (code, ARMREG_IP);
+	} else {
+		ARM_MOV_REG_REG (code, ARMREG_LR, ARMREG_PC);
+		ARM_MOV_REG_REG (code, ARMREG_PC, ARMREG_IP);
+	}
+#else
+	/* Thumb2: load target address and BLX (no AOT on NuttX) */
+	code = mono_arm_emit_load_imm (code, ARMREG_IP, GPOINTER_TO_UINT (resume_unwind ? (gpointer)mono_arm_resume_unwind : (corlib ? (gpointer)mono_arm_throw_exception_by_token : (gpointer)mono_arm_throw_exception)));
+	ARM_BLX_REG (code, ARMREG_IP);
+#endif
+
 	/* we should never reach this breakpoint */
 	ARM_DBRK (code);
 	g_assert ((code - start) < size);
@@ -329,8 +362,14 @@ get_throw_trampoline (int size, gboolean corlib, gboolean rethrow, gboolean llvm
 	if (info)
 		*info = mono_tramp_info_create (tramp_name, start, GPTRDIFF_TO_UINT32 (code - start), ji, unwind_ops);
 
+	ARM_CALL_TARGET (start);
+
 	return start;
 }
+
+#endif /* !DISABLE_JIT || (HOST_NUTTX && __thumb2__) */
+
+#if !defined(DISABLE_JIT) || defined(HOST_NUTTX)
 
 /**
  * arch_get_throw_exception:
@@ -410,21 +449,16 @@ mono_arm_get_exception_trampolines (gboolean aot)
 	return tramps;
 }
 
-#else
+#else /* DISABLE_JIT && !HOST_NUTTX */
 
 GSList*
 mono_arm_get_exception_trampolines (gboolean aot)
 {
-#ifdef HOST_NUTTX
-	/* NuttX interpreter-only: no exception trampolines needed */
-	return NULL;
-#else
 	g_assert_not_reached ();
 	return NULL;
-#endif
 }
 
-#endif
+#endif /* !DISABLE_JIT || HOST_NUTTX */
 
 void
 mono_arch_exceptions_init (void)

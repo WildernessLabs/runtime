@@ -343,8 +343,9 @@ mono_exception_from_token_two_strings_checked (MonoImage *image, guint32 token,
 MonoException *
 mono_get_exception_divide_by_zero (void)
 {
-	return mono_exception_from_name (mono_get_corlib (), "System",
+	MonoException *ex = mono_exception_from_name (mono_get_corlib (), "System",
 					 "DivideByZeroException");
+	return ex;
 }
 
 /**

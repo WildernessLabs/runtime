@@ -119,6 +119,17 @@ mono_hwcap_arch_init (void)
 	mono_hwcap_arm_has_vfp3_d16 = TRUE;
 	mono_hwcap_arm_has_thumb = TRUE;
 	mono_hwcap_arm_has_thumb2 = TRUE;
+#elif defined(HOST_NUTTX)
+	/* Cortex-M7 (STM32F777): ARMv7E-M, Thumb2-only, VFPv5-SP-D16.
+	 * NuttX has no /proc/cpuinfo or getauxval, so hardcode caps. */
+	mono_hwcap_arm_is_v5 = TRUE;
+	mono_hwcap_arm_is_v6 = TRUE;
+	mono_hwcap_arm_is_v7 = TRUE;
+	mono_hwcap_arm_has_vfp = TRUE;
+	mono_hwcap_arm_has_vfp3 = TRUE;
+	mono_hwcap_arm_has_vfp3_d16 = TRUE;
+	mono_hwcap_arm_has_thumb = TRUE;
+	mono_hwcap_arm_has_thumb2 = TRUE;
 #else
 	/* We can't use the auxiliary vector on Android due to
 	 * permissions, so fall back to /proc/cpuinfo. We also

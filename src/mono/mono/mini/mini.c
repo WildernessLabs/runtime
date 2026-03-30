@@ -4227,7 +4227,19 @@ mono_jit_compile_method_inner (MonoMethod *method, int opt, MonoError *error)
 	error_init (error);
 
 	start = mono_time_track_start ();
+	/* NuttX: Don't run .cctors at JIT compile time.  Running them eagerly
+	 * creates circular bootstrap dependencies — e.g. UTF8Encoding:.cctor →
+	 * constructor chain → SR.GetResourceString → GlobalizationMode (static
+	 * field access seen in IL) → Settings:.cctor → GetEnvironmentVariable →
+	 * P/Invoke Utf8StringMarshaller → Encoding.get_UTF8() → reads
+	 * UTF8Encoding.s_default which is still NULL because its .cctor is the
+	 * outer caller.  Deferring .cctors to runtime avoids this because the
+	 * JIT emits lazy class-init checks instead of running .cctors inline. */
+#ifdef HOST_NUTTX
+	cfg = mini_method_compile (method, opt, 0, 0, -1);
+#else
 	cfg = mini_method_compile (method, opt, JIT_FLAG_RUN_CCTORS, 0, -1);
+#endif
 	gint64 jit_time = 0;
 	mono_time_track_end (&jit_time, start);
 	UnlockedAdd64 (&mono_jit_stats.jit_time, jit_time);
