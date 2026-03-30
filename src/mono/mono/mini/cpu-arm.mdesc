@@ -211,14 +211,14 @@ float_conv_to_u4: dest:i src1:f len:88
 float_conv_to_u8: dest:l src1:f len:88
 float_conv_to_u2: dest:i src1:f len:88
 float_conv_to_u1: dest:i src1:f len:88
-float_ceq: dest:i src1:f src2:f len:16
-float_cgt: dest:i src1:f src2:f len:16
-float_cgt_un: dest:i src1:f src2:f len:20
-float_clt: dest:i src1:f src2:f len:16
-float_clt_un: dest:i src1:f src2:f len:20
-float_cneq: dest:y src1:f src2:f len:20
-float_cge: dest:y src1:f src2:f len:20
-float_cle: dest:y src1:f src2:f len:20
+float_ceq: dest:i src1:f src2:f len:20
+float_cgt: dest:i src1:f src2:f len:20
+float_cgt_un: dest:i src1:f src2:f len:24
+float_clt: dest:i src1:f src2:f len:20
+float_clt_un: dest:i src1:f src2:f len:24
+float_cneq: dest:y src1:f src2:f len:24
+float_cge: dest:y src1:f src2:f len:24
+float_cle: dest:y src1:f src2:f len:24
 
 # R4 opcodes
 rmove: dest:f src1:f len:4
@@ -236,14 +236,14 @@ r4_mul: dest:f src1:f src2:f len:4
 r4_div: dest:f src1:f src2:f len:4
 r4_rem: dest:f src1:f src2:f len:16
 r4_neg: dest:f src1:f len:4
-r4_ceq: dest:i src1:f src2:f len:16
-r4_cgt: dest:i src1:f src2:f len:16
-r4_cgt_un: dest:i src1:f src2:f len:20
-r4_clt: dest:i src1:f src2:f len:16
-r4_clt_un: dest:i src1:f src2:f len:20
-r4_cneq: dest:y src1:f src2:f len:20
-r4_cge: dest:y src1:f src2:f len:20
-r4_cle: dest:y src1:f src2:f len:20
+r4_ceq: dest:i src1:f src2:f len:20
+r4_cgt: dest:i src1:f src2:f len:20
+r4_cgt_un: dest:i src1:f src2:f len:24
+r4_clt: dest:i src1:f src2:f len:20
+r4_clt_un: dest:i src1:f src2:f len:24
+r4_cneq: dest:y src1:f src2:f len:24
+r4_cge: dest:y src1:f src2:f len:24
+r4_cle: dest:y src1:f src2:f len:24
 
 setfret: src1:f len:12
 aotconst: dest:i len:16
@@ -310,7 +310,7 @@ add_ovf_un_carry: dest:i src1:i src2:i len:16
 sub_ovf_un_carry: dest:i src1:i src2:i len:16
 
 arm_rsbs_imm: dest:i src1:i len:4
-arm_rsc_imm: dest:i src1:i len:4
+arm_rsc_imm: dest:i src1:i len:16
 
 # Linear IR opcodes
 dummy_use: src1:i len:0
