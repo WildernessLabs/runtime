@@ -2126,6 +2126,12 @@ mini_emit_inst_for_method (MonoCompile *cfg, MonoMethod *cmethod, MonoMethodSign
 					result= asinh (source);
 					break;
 				case OP_ATAN:
+#ifdef HOST_NUTTX
+					/* NuttX libm atan() returns NaN for ±∞ */
+					if (isinf (source))
+						result = copysign (M_PI_2, source);
+					else
+#endif
 					result = atan (source);
 					break;
 				case OP_ATANH:

@@ -119,6 +119,11 @@ ves_icall_System_Math_Asinh (gdouble x)
 gdouble
 ves_icall_System_Math_Atan (gdouble x)
 {
+#ifdef HOST_NUTTX
+	/* NuttX libm atan() uses asin(x/sqrt(x*x+1)) which produces NaN for ±∞ */
+	if (isinf (x))
+		return copysign (M_PI_2, x);
+#endif
 	return atan (x);
 }
 
@@ -209,6 +214,10 @@ ves_icall_System_MathF_Asinh  (float x)
 float
 ves_icall_System_MathF_Atan  (float x)
 {
+#ifdef HOST_NUTTX
+	if (isinf (x))
+		return copysignf ((float)M_PI_2, x);
+#endif
 	return atanf (x);
 }
 
