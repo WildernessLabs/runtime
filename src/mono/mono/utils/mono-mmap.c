@@ -250,6 +250,16 @@ mono_setmmapjit (int flag)
 void*
 mono_valloc (void *addr, size_t length, int flags, MonoMemAccountType type)
 {
+#ifdef HOST_NUTTX
+	/* NuttX has no real mmap. Use malloc-based allocation directly,
+	 * matching legacy Mono's approach. The mmap stub in mono_nuttx_stubs.c
+	 * is kept for assembly file-mapping (image.c) only. */
+	if (addr != NULL)
+		return NULL;
+	if (!mono_valloc_can_alloc (length))
+		return NULL;
+	return mono_valloc_aligned (length, mono_pagesize (), flags, type);
+#else
 	void *ptr;
 	int mflags = 0;
 	int prot = prot_from_flags (flags);
@@ -314,6 +324,7 @@ mono_valloc (void *addr, size_t length, int flags, MonoMemAccountType type)
 	mono_account_mem (type, (ssize_t)length);
 
 	return ptr;
+#endif /* !HOST_NUTTX */
 }
 
 /**
@@ -326,6 +337,15 @@ mono_valloc (void *addr, size_t length, int flags, MonoMemAccountType type)
 int
 mono_vfree (void *addr, size_t length, MonoMemAccountType type)
 {
+#ifdef HOST_NUTTX
+	extern size_t nuttx_valloc_total;
+	extern int nuttx_valloc_count;
+	nuttx_valloc_total -= length;
+	nuttx_valloc_count--;
+	free (addr);
+	mono_account_mem (type, -(ssize_t)length);
+	return 0;
+#else
 	int res;
 	BEGIN_CRITICAL_SECTION;
 	res = munmap (addr, length);
@@ -334,6 +354,7 @@ mono_vfree (void *addr, size_t length, MonoMemAccountType type)
 	mono_account_mem (type, -(ssize_t)length);
 
 	return res;
+#endif
 }
 
 /**
@@ -456,6 +477,28 @@ mono_mprotect (void *addr, size_t length, int flags)
 	// No GC safe transition because this is called early in mini_init via mono_arch_init (with a few layers of indirection)
 	return mprotect (addr, length, prot);
 }
+
+#ifdef HOST_NUTTX
+/* NuttX: memalign-based mono_valloc_aligned so the generic
+ * over-allocate-and-trim fallback (which calls mono_vfree on
+ * interior pointers) is never used. */
+size_t nuttx_valloc_total = 0;
+int nuttx_valloc_count = 0;
+
+void*
+mono_valloc_aligned (size_t size, size_t alignment, int flags, MonoMemAccountType type)
+{
+	void *res = memalign (alignment, size);
+	if (!res)
+		return NULL;
+	nuttx_valloc_count++;
+	nuttx_valloc_total += size;
+	memset (res, 0, size);
+	mono_account_mem (type, (ssize_t)size);
+	return res;
+}
+#define HAVE_VALLOC_ALIGNED
+#endif
 
 #else
 

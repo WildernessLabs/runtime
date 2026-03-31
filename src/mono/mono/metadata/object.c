@@ -574,6 +574,9 @@ retry_top:
 			else
 				full_name = g_strdup (klass_name);
 
+#ifdef HOST_NUTTX
+			g_print ("CCTOR FAILED: %s\n", full_name);
+#endif
 			MonoException *exc_to_throw = mono_get_exception_type_initialization_checked (full_name, exc, error);
 			MONO_HANDLE_NEW (MonoException, exc_to_throw);
 			g_free (full_name);

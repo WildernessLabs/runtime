@@ -38,7 +38,14 @@ void sgen_card_table_init (SgenRememberedSet *remset, gboolean consistency_check
 /* How many bits of the address space is covered by the card table.
  * If this value is smaller than the number of address bits, card aliasing is required.
  */
+#ifdef HOST_NUTTX
+/* NuttX/Cortex-M7: 32MB SDRAM at 0xC0000000. A full 32-bit card table
+ * costs 8MB — too much for 29MB of usable heap. Use 26-bit coverage
+ * (128KB table) with overlapping/aliased cards instead. */
+#define CARD_TABLE_BITS 26
+#else
 #define CARD_TABLE_BITS 32
+#endif
 
 #define CARD_SIZE_IN_BYTES (1 << CARD_BITS)
 #define CARD_COUNT_BITS (CARD_TABLE_BITS - CARD_BITS)

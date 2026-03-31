@@ -4108,10 +4108,44 @@ arm_patch (guchar *code, const guchar *target)
  * (with the rotation amount in *rot_amount. rot_amount is already adjusted
  * to be used with the emit macros.
  * Return -1 otherwise.
+ *
+ * In Thumb2 mode, additionally reject values that are valid ARM rotated imm8
+ * but cannot be encoded as a Thumb2 modified 12-bit immediate.  ARM rotated
+ * imm8 can produce non-contiguous bit patterns (e.g. 0x10000002 = 0x21 ROR 4)
+ * but Thumb2 ThumbExpandImm's rotation case always produces contiguous bits
+ * (8-bit mantissa with implicit leading 1).  Accepting such values here would
+ * cause arm_imm12() to silently truncate them.
  */
 int
 mono_arm_is_rotated_imm8 (guint32 val, gint *rot_amount)
 {
+#ifdef __thumb2__
+	/*
+	 * Check if val is a valid Thumb2 modified immediate.
+	 * Valid encodings: 0..255, byte-repeat patterns, or all set bits
+	 * fitting within a contiguous 8-bit window in the 32-bit value.
+	 */
+	if (val > 255) {
+		uint8_t *byte = (uint8_t *)&val;
+		gboolean valid = FALSE;
+		if ((byte[1] == 0) && (byte[3] == 0) && (byte[0] == byte[2]))
+			valid = TRUE;
+		else if ((byte[0] == 0) && (byte[2] == 0) && (byte[1] == byte[3]))
+			valid = TRUE;
+		else if ((byte[0] == byte[1]) && (byte[0] == byte[2]) && (byte[0] == byte[3]))
+			valid = TRUE;
+		else {
+			/* Rotation case: all set bits must fit in an 8-bit window */
+			guint32 lz = __builtin_clz(val);
+			guint32 rol = 24 - lz;
+			guint32 m = val >> rol;
+			valid = (m <= 0xFF) && ((m << rol) == val);
+		}
+		if (!valid)
+			return -1;
+	}
+#endif
+
 	guint32 res, i;
 	for (i = 0; i < 31; i+= 2) {
 		if (i == 0)
