@@ -2840,18 +2840,8 @@ lookup_start:
 		code = mono_jit_compile_method_inner (method, opt, error);
 		unregister_method_for_compile (method);
 	}
-	if (!is_ok (error)) {
-#ifdef HOST_NUTTX
-		{
-			char *mname = mono_method_full_name (method, TRUE);
-			char *msg = mono_error_get_message (error);
-			g_print ("JIT FAILED: %s — %s\n", mname, msg ? msg : "(no message)");
-			g_free (msg);
-			g_free (mname);
-		}
-#endif
+	if (!is_ok (error))
 		return NULL;
-	}
 
 	if (!code && mono_llvm_only) {
 		printf ("AOT method not found in llvmonly mode: %s\n", mono_method_full_name (method, 1));

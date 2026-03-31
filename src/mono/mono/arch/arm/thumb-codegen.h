@@ -200,7 +200,7 @@ typedef enum {
 } ArmDmbFlags;
 
 static __THUMB_INLINE__ int
-arm_imm12(int imm) 
+arm_imm12(int imm)
 {
 	uint32_t m, lz, rol, ror;
 	int val;
@@ -212,17 +212,23 @@ arm_imm12(int imm)
 	if ((imm >= 0) && (imm < 256))
 		return(imm);
 
+	/*
+	 * Thumb2 ThumbExpandImm byte-repeat patterns (bits[11:10] == 00):
+	 *   bits[9:8] == 01 → 0x00XY00XY  (byte[1]==0, byte[3]==0, byte[0]==byte[2])
+	 *   bits[9:8] == 10 → 0xXY00XY00  (byte[0]==0, byte[2]==0, byte[1]==byte[3])
+	 *   bits[9:8] == 11 → 0xXYXYXYXY  (all bytes equal)
+	 */
 	if ((byte[1] == 0) && (byte[3] == 0) && (byte[0] == byte[2]))
-		val = 0x200 | byte[0];
-	else if ((byte[0] == 0) && (byte[2] == 0) && (byte[1] == byte[3]))
 		val = 0x100 | byte[0];
+	else if ((byte[0] == 0) && (byte[2] == 0) && (byte[1] == byte[3]))
+		val = 0x200 | byte[1];
 	else if ((byte[0] == byte[1]) && (byte[0] == byte[2]) && (byte[0] == byte[3]))
 		val = 0x300 | byte[0];
 	else {
 		lz = __builtin_clz(imm);
 		rol = 24 - lz;
 		ror = 32 - rol;
-		m = imm >> rol;
+		m = (uint32_t)imm >> rol;
 		val = ((ror << 7) & 0xf80) | (m & 0x7f);
 	}
 	return(val);
