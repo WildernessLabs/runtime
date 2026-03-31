@@ -33,6 +33,13 @@
  * stdlib.h, not malloc.h, so dlmalloc's guard __INCLUDE_MALLOC_H misses it) */
 #define __INCLUDE_MALLOC_H 1
 
+/* NuttX sysconf() doesn't support _SC_PAGE_SIZE (returns -1). Mono's
+ * dlmalloc uses sysconf(_SC_PAGE_SIZE) via HAVE_SYSCONF and ABORTs when
+ * it gets 0xFFFFFFFF (not a power of 2). Pre-define malloc_getpagesize
+ * to bypass the broken sysconf path. NuttX has no MMU pages; 4096 is
+ * the standard default. */
+#define malloc_getpagesize ((size_t)4096U)
+
 /* Force C99 _Bool for bool instead of NuttX's _Bool8 (uint8_t).
  * Mono code assumes bool is int-sized (C99 _Bool). */
 #define CONFIG_C99_BOOL8 1
