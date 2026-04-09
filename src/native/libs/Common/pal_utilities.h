@@ -78,8 +78,11 @@ inline static int ToFileDescriptorUnchecked(intptr_t fd)
 */
 inline static int ToFileDescriptor(intptr_t fd)
 {
-#ifndef TARGET_WASI // the valid range of file descriptors is probably INT32_MIN <= fd && fd <= INT32_MAX, the negative handles are valid for console.
+#if !defined(TARGET_WASI) && !defined(__NuttX__)
+    // the valid range of file descriptors is probably INT32_MIN <= fd && fd <= INT32_MAX, the negative handles are valid for console.
     assert(0 <= fd && fd < sysconf(_SC_OPEN_MAX));
+#else
+    (void)fd; // NuttX: sysconf(_SC_OPEN_MAX) returns -1, skip assert; WASI: negative handles valid
 #endif
 
     return ToFileDescriptorUnchecked(fd);

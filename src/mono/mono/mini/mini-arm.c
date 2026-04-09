@@ -1077,7 +1077,8 @@ mono_arch_flush_icache (guint8 *code, gint size)
 #elif __APPLE__
 	sys_icache_invalidate (code, size);
 #elif defined(__NuttX__)
-	/* NuttX: use the kernel cache invalidation API (SCB->ICIALLU on Cortex-M7) */
+	/* NuttX/Cortex-M7: call up_invalidate_icache which is implemented in
+	   mono_nuttx_stubs.c using the cacheflush() syscall (ICIALLU via kernel). */
 	up_invalidate_icache ((uintptr_t)code, (uintptr_t)code + size);
 #else
     __builtin___clear_cache ((char*)code, (char*)code + size);
@@ -3951,6 +3952,18 @@ arm_patch_general (MonoCompile *cfg, guchar *code, const guchar *target)
 			guint16 *hw = (guint16 *)code;
 			int cond = (hw1 >> 8) & 0xF;
 			*hw = 0xD000 | (cond << 8) | (imm & 0xFF);
+			return;
+		}
+
+		/* LDR Rt, [PC, #imm12] — literal pool load (T2 encoding).
+		 * Used by dynamic trampolines for indirect branches via literal pool.
+		 * Patch the literal pool entry instead of the instruction. */
+		if (hw1 == 0xF8DF) {
+			guint32 imm12 = hw2 & 0xFFF;
+			/* PC = Align(instruction_address, 4) + 4 */
+			guint8 *pc = (guint8 *)(((gsize)code & ~(gsize)3) + 4);
+			guint32 *literal = (guint32 *)(pc + imm12);
+			*literal = tval;
 			return;
 		}
 
@@ -7201,7 +7214,14 @@ mono_arch_build_imt_trampoline (MonoVTable *vtable, MonoIMTCheckItem **imt_entri
 #endif
 
 	if (large_offsets) {
+#ifdef __NuttX__
+		/* Cortex-M (Thumb2-only): pushing PC is UNPREDICTABLE.
+		   Push LR instead; the POP4(..., PC) epilogues remain valid
+		   because POP {.., PC} is legal in Thumb2 and branches. */
+		ARM_PUSH4 (code, ARMREG_R0, ARMREG_R1, ARMREG_IP, ARMREG_LR);
+#else
 		ARM_PUSH4 (code, ARMREG_R0, ARMREG_R1, ARMREG_IP, ARMREG_PC);
+#endif
 		mono_add_unwind_op_def_cfa_offset (unwind_ops, code, start, 4 * sizeof (target_mgreg_t));
 	} else {
 		ARM_PUSH2 (code, ARMREG_R0, ARMREG_R1);

@@ -37,12 +37,12 @@ void
 mono_arch_patch_callsite (guint8 *method_start, guint8 *code_ptr, guint8 *addr)
 {
 #ifdef __thumb2__
-	/* Thumb2: code_ptr points after the BL instruction (4 bytes).
-	 * A 32-bit BL is stored as two 16-bit halfwords: hw1 hw2.
-	 * hw1 = 0xF000 | S:imm10, hw2 = 0xD000 | J1:J2:imm11 */
+	/* Strip Thumb bit from code_ptr — all arithmetic must use aligned addresses */
+	code_ptr = (guint8 *)((gsize)code_ptr & ~(gsize)1);
+
+	/* Thumb2: code_ptr points after the call instruction.
+	 * Check for 32-bit BL (4 bytes before code_ptr). */
 	guint8 *insn = code_ptr - 4;
-	/* Strip Thumb bit if present */
-	insn = (guint8 *)((gsize)insn & ~(gsize)1);
 	guint16 hw1 = *(guint16 *)insn;
 
 	if ((hw1 & 0xF800) == 0xF000) {
@@ -55,13 +55,22 @@ mono_arch_patch_callsite (guint8 *method_start, guint8 *code_ptr, guint8 *addr)
 		}
 	}
 
-	/* Could be an indirect call via BLX reg — check for LDR + BLX pattern.
-	 * The thunk is: LDR.W ip,[PC,#4] + BX ip + NOP + literal (12 bytes).
-	 * Look back for BLX (16-bit: 0x47x0 where x encodes reg). */
+	/* Check for 16-bit BLX reg (2 bytes before code_ptr).
+	 * BLX Rn = 0x4780 | (Rn << 3). */
 	guint16 prev16 = *(guint16 *)(code_ptr - 2);
 	if ((prev16 & 0xFF80) == 0x4780) {
-		/* BLX reg — patch the literal in the preceding thunk */
-		/* For now, treat as not patchable (the thunk literal is handled elsewhere) */
+		/* BLX reg — look backwards for LDR.W Rd,[PC,#imm] that loaded
+		 * the target address and patch the literal pool entry. */
+		guint8 *ldr = code_ptr - 2 - 4;  /* 32-bit LDR.W before 16-bit BLX */
+		guint16 ldr_hw1 = *(guint16 *)ldr;
+		if (ldr_hw1 == 0xF8DF) {
+			guint16 ldr_hw2 = *(guint16 *)(ldr + 2);
+			guint32 imm12 = ldr_hw2 & 0xFFF;
+			guint8 *pc = (guint8 *)(((gsize)ldr & ~(gsize)3) + 4);
+			guint32 *literal = (guint32 *)(pc + imm12);
+			*literal = (guint32)(gsize)addr;
+			mono_arch_flush_icache ((guint8 *)literal, 4);
+		}
 		return;
 	}
 

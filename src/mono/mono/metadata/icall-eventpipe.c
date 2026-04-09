@@ -491,6 +491,24 @@ ves_icall_System_Diagnostics_Tracing_NativeRuntimeEventSource_LogWaitHandleWaitS
 
 #else /* ENABLE_PERFTRACING */
 
+/*
+ * No-op stubs when EventPipe is disabled at the native level.
+ *
+ * CoreLib is built with FEATURE_PERFTRACING enabled (TargetsNuttX is never set
+ * in the managed build), so EventSource.Initialize() calls these icalls even on
+ * NuttX.  The previous stubs called mono_error_set_not_implemented() which caused
+ * EventSource construction to hang (the NotImplementedException from CreateProvider
+ * was caught, but subsequent EventSource error-reporting paths triggered additional
+ * EventPipe icalls in a way that deadlocked on the interpreter).
+ *
+ * Fix: return dummy success values so EventSource thinks EventPipe is present.
+ * Events are silently dropped since the provider/event handles are opaque dummies.
+ */
+
+/* Use distinct dummy addresses so managed code sees non-zero handles */
+static int s_dummy_provider;
+static int s_dummy_event;
+
 gconstpointer
 ves_icall_System_Diagnostics_Tracing_EventPipeInternal_CreateProvider (
 	MonoStringHandle provider_name,
@@ -498,8 +516,7 @@ ves_icall_System_Diagnostics_Tracing_EventPipeInternal_CreateProvider (
 	gpointer callback_context,
 	MonoError *error)
 {
-	mono_error_set_not_implemented (error, "System.Diagnostics.Tracing.EventPipeInternal.CreateProvider");
-	return NULL;
+	return (gconstpointer)&s_dummy_provider;
 }
 
 intptr_t
@@ -512,26 +529,17 @@ ves_icall_System_Diagnostics_Tracing_EventPipeInternal_DefineEvent (
 	const uint8_t *metadata,
 	uint32_t metadata_len)
 {
-	ERROR_DECL (error);
-	mono_error_set_not_implemented (error, "System.Diagnostics.Tracing.EventPipeInternal.DefineEvent");
-	mono_error_set_pending_exception (error);
-	return 0;
+	return (intptr_t)&s_dummy_event;
 }
 
 void
 ves_icall_System_Diagnostics_Tracing_EventPipeInternal_DeleteProvider (intptr_t provider_handle)
 {
-	ERROR_DECL (error);
-	mono_error_set_not_implemented (error, "System.Diagnostics.Tracing.EventPipeInternal.DeleteProvider");
-	mono_error_set_pending_exception (error);
 }
 
 void
 ves_icall_System_Diagnostics_Tracing_EventPipeInternal_Disable (uint64_t session_id)
 {
-	ERROR_DECL (error);
-	mono_error_set_not_implemented (error, "System.Diagnostics.Tracing.EventPipeInternal.Disable");
-	mono_error_set_pending_exception (error);
 }
 
 uint64_t
@@ -542,9 +550,6 @@ ves_icall_System_Diagnostics_Tracing_EventPipeInternal_Enable (
 	/* EventPipeProviderConfigurationNative[] */const void *providers,
 	uint32_t providers_len)
 {
-	ERROR_DECL (error);
-	mono_error_set_not_implemented (error, "System.Diagnostics.Tracing.EventPipeInternal.Enable");
-	mono_error_set_pending_exception (error);
 	return 0;
 }
 
@@ -553,9 +558,6 @@ ves_icall_System_Diagnostics_Tracing_EventPipeInternal_EventActivityIdControl (
 	uint32_t control_code,
 	/* GUID * */uint8_t *activity_id)
 {
-	ERROR_DECL (error);
-	mono_error_set_not_implemented (error, "System.Diagnostics.Tracing.EventPipeInternal.EventActivityIdControl");
-	mono_error_set_pending_exception (error);
 	return 0;
 }
 
@@ -564,18 +566,12 @@ ves_icall_System_Diagnostics_Tracing_EventPipeInternal_GetNextEvent (
 	uint64_t session_id,
 	/* EventPipeEventInstanceData * */void *instance)
 {
-	ERROR_DECL (error);
-	mono_error_set_not_implemented (error, "System.Diagnostics.Tracing.EventPipeInternal.GetNextEvent");
-	mono_error_set_pending_exception (error);
 	return FALSE;
 }
 
 intptr_t
 ves_icall_System_Diagnostics_Tracing_EventPipeInternal_GetProvider (const gunichar2 *provider_name)
 {
-	ERROR_DECL (error);
-	mono_error_set_not_implemented (error, "System.Diagnostics.Tracing.EventPipeInternal.GetProvider");
-	mono_error_set_pending_exception (error);
 	return 0;
 }
 
@@ -584,18 +580,12 @@ ves_icall_System_Diagnostics_Tracing_EventPipeInternal_GetSessionInfo (
 	uint64_t session_id,
 	/* EventPipeSessionInfo * */void *session_info)
 {
-	ERROR_DECL (error);
-	mono_error_set_not_implemented (error, "System.Diagnostics.Tracing.EventPipeInternal.GetSessionInfo");
-	mono_error_set_pending_exception (error);
 	return FALSE;
 }
 
 MonoBoolean
 ves_icall_System_Diagnostics_Tracing_EventPipeInternal_SignalSession (uint64_t session_id)
 {
-	ERROR_DECL (error);
-	mono_error_set_not_implemented (error, "System.Diagnostics.Tracing.EventPipeInternal.SignalSession");
-	mono_error_set_pending_exception (error);
 	return FALSE;
 }
 
@@ -604,9 +594,6 @@ ves_icall_System_Diagnostics_Tracing_EventPipeInternal_WaitForSessionSignal (
 	uint64_t session_id,
 	int32_t timeout)
 {
-	ERROR_DECL (error);
-	mono_error_set_not_implemented (error, "System.Diagnostics.Tracing.EventPipeInternal.WaitForSessionSignal");
-	mono_error_set_pending_exception (error);
 	return FALSE;
 }
 
@@ -618,17 +605,11 @@ ves_icall_System_Diagnostics_Tracing_EventPipeInternal_WriteEventData (
 	/* GUID * */const uint8_t *activity_id,
 	/* GUID * */const uint8_t *related_activity_id)
 {
-	ERROR_DECL (error);
-	mono_error_set_not_implemented (error, "System.Diagnostics.Tracing.EventPipeInternal.WriteEventData");
-	mono_error_set_pending_exception (error);
 }
 
 guint64
 ves_icall_System_Diagnostics_Tracing_EventPipeInternal_GetRuntimeCounterValue (gint32 id)
 {
-	ERROR_DECL (error);
-	mono_error_set_not_implemented (error, "System.Diagnostics.Tracing.EventPipeInternal.GetRuntimeCounterValue");
-	mono_error_set_pending_exception (error);
 	return 0;
 }
 
@@ -638,9 +619,6 @@ ves_icall_System_Diagnostics_Tracing_NativeRuntimeEventSource_LogThreadPoolWorke
 	uint32_t retired_worker_thread_count,
 	uint16_t clr_instance_id)
 {
-	ERROR_DECL (error);
-	mono_error_set_not_implemented (error, "System.Diagnostics.Tracing.NativeRuntimeEventSource.LogThreadPoolWorkerThreadStart");
-	mono_error_set_pending_exception (error);
 }
 
 void
@@ -649,9 +627,6 @@ ves_icall_System_Diagnostics_Tracing_NativeRuntimeEventSource_LogThreadPoolWorke
 	uint32_t retired_worker_thread_count,
 	uint16_t clr_instance_id)
 {
-	ERROR_DECL (error);
-	mono_error_set_not_implemented (error, "System.Diagnostics.Tracing.NativeRuntimeEventSource.LogThreadPoolWorkerThreadStop");
-	mono_error_set_pending_exception (error);
 }
 
 void
@@ -660,9 +635,6 @@ ves_icall_System_Diagnostics_Tracing_NativeRuntimeEventSource_LogThreadPoolWorke
 	uint32_t retired_worker_thread_count,
 	uint16_t clr_instance_id)
 {
-	ERROR_DECL (error);
-	mono_error_set_not_implemented (error, "System.Diagnostics.Tracing.NativeRuntimeEventSource.LogThreadPoolWorkerThreadWait");
-	mono_error_set_pending_exception (error);
 }
 
 void
@@ -673,9 +645,6 @@ ves_icall_System_Diagnostics_Tracing_NativeRuntimeEventSource_LogThreadPoolMinMa
 	uint16_t max_io_completion_threads,
 	uint16_t clr_instance_id)
 {
-	ERROR_DECL (error);
-	mono_error_set_not_implemented (error, "System.Diagnostics.Tracing.NativeRuntimeEventSource.LogThreadPoolMinMaxThreads");
-	mono_error_set_pending_exception (error);
 }
 
 void
@@ -683,9 +652,6 @@ ves_icall_System_Diagnostics_Tracing_NativeRuntimeEventSource_LogThreadPoolWorke
 	double throughput,
 	uint16_t clr_instance_id)
 {
-	ERROR_DECL (error);
-	mono_error_set_not_implemented (error, "System.Diagnostics.Tracing.NativeRuntimeEventSource.LogThreadPoolWorkerThreadAdjustmentSample");
-	mono_error_set_pending_exception (error);
 }
 
 void
@@ -695,9 +661,6 @@ ves_icall_System_Diagnostics_Tracing_NativeRuntimeEventSource_LogThreadPoolWorke
 	/*NativeRuntimeEventSource.ThreadAdjustmentReasonMap*/ int32_t reason,
 	uint16_t clr_instance_id)
 {
-	ERROR_DECL (error);
-	mono_error_set_not_implemented (error, "System.Diagnostics.Tracing.NativeRuntimeEventSource.LogThreadPoolWorkerThreadAdjustmentAdjustment");
-	mono_error_set_pending_exception (error);
 }
 
 void
@@ -714,9 +677,6 @@ ves_icall_System_Diagnostics_Tracing_NativeRuntimeEventSource_LogThreadPoolWorke
 	uint16_t new_thread_wave_magnitude,
 	uint16_t clr_instance_id)
 {
-	ERROR_DECL (error);
-	mono_error_set_not_implemented (error, "System.Diagnostics.Tracing.NativeRuntimeEventSource.LogThreadPoolWorkerThreadAdjustmentStats");
-	mono_error_set_pending_exception (error);
 }
 
 void
@@ -726,9 +686,6 @@ ves_icall_System_Diagnostics_Tracing_NativeRuntimeEventSource_LogThreadPoolIOEnq
 	MonoBoolean multi_dequeues,
 	uint16_t clr_instance_id)
 {
-	ERROR_DECL (error);
-	mono_error_set_not_implemented (error, "System.Diagnostics.Tracing.NativeRuntimeEventSource.LogThreadPoolIOEnqueue");
-	mono_error_set_pending_exception (error);
 }
 
 void
@@ -737,9 +694,6 @@ ves_icall_System_Diagnostics_Tracing_NativeRuntimeEventSource_LogThreadPoolIODeq
 	intptr_t overlapped,
 	uint16_t clr_instance_id)
 {
-	ERROR_DECL (error);
-	mono_error_set_not_implemented (error, "System.Diagnostics.Tracing.NativeRuntimeEventSource.LogThreadPoolIODequeue");
-	mono_error_set_pending_exception (error);
 }
 
 void
@@ -747,9 +701,6 @@ ves_icall_System_Diagnostics_Tracing_NativeRuntimeEventSource_LogThreadPoolWorki
 	uint16_t count,
 	uint16_t clr_instance_id)
 {
-	ERROR_DECL (error);
-	mono_error_set_not_implemented (error, "System.Diagnostics.Tracing.NativeRuntimeEventSource.LogThreadPoolWorkingThreadCount");
-	mono_error_set_pending_exception (error);
 }
 
 void
@@ -758,9 +709,6 @@ ves_icall_System_Diagnostics_Tracing_NativeRuntimeEventSource_LogThreadPoolIOPac
 	intptr_t overlapped,
 	uint16_t clr_instance_id)
 {
-	ERROR_DECL (error);
-	mono_error_set_not_implemented (error, "System.Diagnostics.Tracing.NativeRuntimeEventSource.LogThreadPoolIOPack");
-	mono_error_set_pending_exception (error);
 }
 
 void
@@ -769,9 +717,6 @@ ves_icall_System_Diagnostics_Tracing_NativeRuntimeEventSource_LogContentionLockC
 	intptr_t associated_object_id,
 	uint16_t clr_instance_id)
 {
-	ERROR_DECL (error);
-	mono_error_set_not_implemented (error, "System.Diagnostics.Tracing.NativeRuntimeEventSource.LogContentionLockCreated");
-	mono_error_set_pending_exception (error);
 }
 
 void
@@ -782,9 +727,6 @@ ves_icall_System_Diagnostics_Tracing_NativeRuntimeEventSource_LogContentionStart
 	intptr_t associated_object_id,
 	uint64_t lock_owner_thread_id)
 {
-	ERROR_DECL (error);
-	mono_error_set_not_implemented (error, "System.Diagnostics.Tracing.NativeRuntimeEventSource.LogContentionStart");
-	mono_error_set_pending_exception (error);
 }
 
 void
@@ -793,9 +735,6 @@ ves_icall_System_Diagnostics_Tracing_NativeRuntimeEventSource_LogContentionStop 
 	uint16_t clr_instance_id,
 	double duration_ns)
 {
-	ERROR_DECL (error);
-	mono_error_set_not_implemented (error, "System.Diagnostics.Tracing.NativeRuntimeEventSource.LogContentionStop");
-	mono_error_set_pending_exception (error);
 }
 
 void
@@ -804,18 +743,12 @@ ves_icall_System_Diagnostics_Tracing_NativeRuntimeEventSource_LogWaitHandleWaitS
 	intptr_t associated_object_id,
 	uint16_t clr_instance_id)
 {
-	ERROR_DECL (error);
-	mono_error_set_not_implemented (error, "System.Diagnostics.Tracing.NativeRuntimeEventSource.WaitHandleWaitStart");
-	mono_error_set_pending_exception (error);
 }
 
 void
 ves_icall_System_Diagnostics_Tracing_NativeRuntimeEventSource_LogWaitHandleWaitStop (
 	uint16_t clr_instance_id)
 {
-	ERROR_DECL (error);
-	mono_error_set_not_implemented (error, "System.Diagnostics.Tracing.NativeRuntimeEventSource.WaitHandleWaitStop");
-	mono_error_set_pending_exception (error);
 }
 
 #endif /* ENABLE_PERFTRACING */
