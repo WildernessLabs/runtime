@@ -2881,6 +2881,17 @@ int32_t SystemNative_Socket(int32_t addressFamily, int32_t socketType, int32_t p
         return Error_EAFNOSUPPORT;
     }
 
+#ifdef __NuttX__
+    // NuttX usrsock (ESP32) does not support IPv6. The kernel accepts AF_INET6
+    // socket creation but IPv6 setsockopt/connect fail later. Reject early so
+    // OSSupportsIPv6 returns false and the managed stack uses IPv4.
+    if (platformAddressFamily == AF_INET6)
+    {
+        *createdSocket = -1;
+        return Error_EAFNOSUPPORT;
+    }
+#endif
+
     if (!TryConvertSocketTypePalToPlatform(socketType, &platformSocketType))
     {
         *createdSocket = -1;
