@@ -22,6 +22,8 @@
 #elif HAVE_KQUEUE
 #include <sys/types.h>
 #include <sys/event.h>
+#elif defined(__NuttX__)
+#include <poll.h>
 #elif HAVE_SYS_POLL_H
 #include <sys/poll.h>
 #include <sys/select.h>
@@ -2903,7 +2905,7 @@ int32_t SystemNative_Socket(int32_t addressFamily, int32_t socketType, int32_t p
         return SystemNative_ConvertErrorPlatformToPal(errno);
     }
 
-#ifndef SOCK_CLOEXEC
+#if !defined(SOCK_CLOEXEC) && !defined(__NuttX__)
     fcntl(ToFileDescriptor(*createdSocket), F_SETFD, FD_CLOEXEC); // ignore any failures; this is best effort
 #endif
     return Error_SUCCESS;
@@ -3171,8 +3173,13 @@ static int32_t CreateSocketEventPortInner(int32_t* port)
 
 static int32_t CloseSocketEventPortInner(int32_t port)
 {
+#ifdef __NuttX__
+    epoll_close(port);
+    return Error_SUCCESS;
+#else
     int err = close(port);
     return err == 0 || (err < 0 && errno == EINTR) ? Error_SUCCESS : SystemNative_ConvertErrorPlatformToPal(errno);
+#endif
 }
 
 static int32_t TryChangeSocketEventRegistrationInner(
@@ -3426,7 +3433,187 @@ static int32_t WaitForSocketEventsInner(int32_t port, SocketEvent* buffer, int32
     return Error_SUCCESS;
 }
 
-#else // !HAVE_KQUEUE !HAVE_EPOLL
+#elif defined(__NuttX__)
+/* -------------------------------------------------------------------
+ * NuttX poll()-based socket event port
+ *
+ * NuttX has poll() but not Linux-compatible epoll.  This implements
+ * the socket event port API using poll() + a wakeup pipe so the
+ * .NET SocketAsyncEngine can initialise and operate normally.
+ * ---------------------------------------------------------------- */
+
+static const size_t SocketEventBufferElementSize = sizeof(SocketEvent);
+
+typedef struct {
+    int      fd;
+    int32_t  events;   /* SocketEvents bitmask */
+    uintptr_t data;    /* opaque context index */
+} NxSockReg;
+
+static pthread_mutex_t s_nxsock_lock = PTHREAD_MUTEX_INITIALIZER;
+static NxSockReg      *s_nxsock_regs;
+static int             s_nxsock_nregs;
+static int             s_nxsock_cap;
+static int             s_nxsock_wake[2] = { -1, -1 };
+
+static int32_t CreateSocketEventPortInner(int32_t* port)
+{
+    if (pipe(s_nxsock_wake) != 0)
+        return SystemNative_ConvertErrorPlatformToPal(errno);
+
+    /* Make the read side non-blocking so drain never stalls */
+    fcntl(s_nxsock_wake[0], F_SETFL,
+          fcntl(s_nxsock_wake[0], F_GETFL) | O_NONBLOCK);
+
+    *port = s_nxsock_wake[0];
+    return Error_SUCCESS;
+}
+
+static int32_t CloseSocketEventPortInner(int32_t port)
+{
+    (void)port;
+    pthread_mutex_lock(&s_nxsock_lock);
+    if (s_nxsock_wake[0] >= 0) { close(s_nxsock_wake[0]); s_nxsock_wake[0] = -1; }
+    if (s_nxsock_wake[1] >= 0) { close(s_nxsock_wake[1]); s_nxsock_wake[1] = -1; }
+    free(s_nxsock_regs); s_nxsock_regs = NULL;
+    s_nxsock_nregs = 0; s_nxsock_cap = 0;
+    pthread_mutex_unlock(&s_nxsock_lock);
+    return Error_SUCCESS;
+}
+
+static void nxsock_wake(void)
+{
+    char c = 'w';
+    ssize_t unused __attribute__((unused));
+    unused = write(s_nxsock_wake[1], &c, 1);
+}
+
+static int32_t TryChangeSocketEventRegistrationInner(
+    int32_t port, int32_t socket, SocketEvents currentEvents, SocketEvents newEvents,
+    uintptr_t data)
+{
+    (void)port; (void)currentEvents;
+
+    pthread_mutex_lock(&s_nxsock_lock);
+
+    /* Look for existing entry */
+    for (int i = 0; i < s_nxsock_nregs; i++)
+    {
+        if (s_nxsock_regs[i].fd == socket)
+        {
+            if (newEvents == SocketEvents_SA_NONE)
+                s_nxsock_regs[i] = s_nxsock_regs[--s_nxsock_nregs]; /* remove */
+            else
+            {
+                s_nxsock_regs[i].events = (int32_t)newEvents;
+                s_nxsock_regs[i].data   = data;
+            }
+            pthread_mutex_unlock(&s_nxsock_lock);
+            nxsock_wake();
+            return Error_SUCCESS;
+        }
+    }
+
+    /* New registration */
+    if (s_nxsock_nregs >= s_nxsock_cap)
+    {
+        int nc = s_nxsock_cap ? s_nxsock_cap * 2 : 16;
+        NxSockReg *nr = (NxSockReg *)realloc(s_nxsock_regs, (size_t)nc * sizeof(NxSockReg));
+        if (!nr) { pthread_mutex_unlock(&s_nxsock_lock); return Error_ENOMEM; }
+        s_nxsock_regs = nr; s_nxsock_cap = nc;
+    }
+    s_nxsock_regs[s_nxsock_nregs].fd     = socket;
+    s_nxsock_regs[s_nxsock_nregs].events = (int32_t)newEvents;
+    s_nxsock_regs[s_nxsock_nregs].data   = data;
+    s_nxsock_nregs++;
+
+    pthread_mutex_unlock(&s_nxsock_lock);
+    nxsock_wake();
+    return Error_SUCCESS;
+}
+
+static int32_t WaitForSocketEventsInner(int32_t port, SocketEvent* buffer, int32_t* count)
+{
+    (void)port;
+    int maxEvents = *count;
+
+retry:;
+    /* Snapshot registered sockets under lock */
+    pthread_mutex_lock(&s_nxsock_lock);
+    int nregs = s_nxsock_nregs;
+    int nfds  = nregs + 1;   /* +1 for wakeup pipe */
+
+    struct pollfd *pfds = (struct pollfd *)malloc((size_t)nfds * sizeof(struct pollfd));
+    NxSockReg     *snap = nregs ? (NxSockReg *)malloc((size_t)nregs * sizeof(NxSockReg)) : NULL;
+    if (!pfds || (nregs && !snap))
+    {
+        free(pfds); free(snap);
+        pthread_mutex_unlock(&s_nxsock_lock);
+        return Error_ENOMEM;
+    }
+    if (nregs)
+        memcpy(snap, s_nxsock_regs, (size_t)nregs * sizeof(NxSockReg));
+    pthread_mutex_unlock(&s_nxsock_lock);
+
+    /* Build pollfd array */
+    pfds[0].fd      = s_nxsock_wake[0];
+    pfds[0].events  = POLLIN;
+    pfds[0].revents = 0;
+    for (int i = 0; i < nregs; i++)
+    {
+        pfds[i + 1].fd     = snap[i].fd;
+        pfds[i + 1].events = 0;
+        if (snap[i].events & (SocketEvents_SA_READ | SocketEvents_SA_READCLOSE))
+            pfds[i + 1].events |= POLLIN;
+        if (snap[i].events & SocketEvents_SA_WRITE)
+            pfds[i + 1].events |= POLLOUT;
+        pfds[i + 1].revents = 0;
+    }
+
+    int ret = poll(pfds, (nfds_t)nfds, -1);
+    if (ret <= 0)
+    {
+        free(pfds); free(snap);
+        goto retry;  /* EINTR or spurious */
+    }
+
+    /* Drain wakeup pipe */
+    if (pfds[0].revents & POLLIN)
+    {
+        char drain[64];
+        while (read(s_nxsock_wake[0], drain, sizeof(drain)) > 0) { }
+    }
+
+    /* Convert poll results to SocketEvents */
+    int n = 0;
+    for (int i = 0; i < nregs && n < maxEvents; i++)
+    {
+        short rev = pfds[i + 1].revents;
+        if (rev == 0)
+            continue;
+
+        SocketEvents ev = SocketEvents_SA_NONE;
+        if (rev & POLLIN)               ev |= SocketEvents_SA_READ;
+        if (rev & POLLOUT)              ev |= SocketEvents_SA_WRITE;
+        if (rev & POLLHUP)              ev |= SocketEvents_SA_CLOSE;
+        if (rev & (POLLERR | POLLNVAL)) ev |= SocketEvents_SA_ERROR;
+
+        buffer[n].Data   = snap[i].data;
+        buffer[n].Events = (int32_t)ev;
+        buffer[n].Padding = 0;
+        n++;
+    }
+
+    free(pfds); free(snap);
+
+    if (n == 0)
+        goto retry;  /* Only wakeup pipe fired, no real events */
+
+    *count = n;
+    return Error_SUCCESS;
+}
+
+#else /* !HAVE_KQUEUE !HAVE_EPOLL !__NuttX__ */
 
 static const size_t SocketEventBufferElementSize = 0;
 
@@ -3448,7 +3635,7 @@ static int32_t WaitForSocketEventsInner(int32_t port, SocketEvent* buffer, int32
 {
     return Error_ENOSYS;
 }
-#endif  // !HAVE_KQUEUE !HAVE_EPOLL
+#endif  /* !HAVE_KQUEUE !HAVE_EPOLL !__NuttX__ */
 
 #if defined(TARGET_WASI)
 // from https://github.com/WebAssembly/wasi-libc/blob/230d4be6c54bec93181050f9e25c87150506bdd0/libc-bottom-half/headers/private/wasi/descriptor_table.h
@@ -3552,7 +3739,8 @@ int32_t SystemNative_WaitForSocketEvents(intptr_t port, SocketEvent* buffer, int
 
     int fd = ToFileDescriptor(port);
 
-    return WaitForSocketEventsInner(fd, buffer, count);
+    int32_t result = WaitForSocketEventsInner(fd, buffer, count);
+    return result;
 }
 
 int32_t SystemNative_PlatformSupportsDualModeIPv4PacketInfo(void)

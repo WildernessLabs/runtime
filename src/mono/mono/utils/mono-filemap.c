@@ -40,6 +40,11 @@ mono_file_map_open (const char* name)
 	int fd = open (name, O_RDONLY);
 	if (fd < 0)
 		return NULL;
+#ifdef HOST_NUTTX
+	/* Track fd→path mapping for SDRAM cache in mmap stub */
+	extern void sdram_cache_track_fd(int fd, const char *path);
+	sdram_cache_track_fd (fd, name);
+#endif
 	return (MonoFileMap *)(size_t)fd;
 #endif
 }

@@ -9,6 +9,12 @@
 #ifndef _NUTTX_COMPAT_H
 #define _NUTTX_COMPAT_H
 
+/* Identify this as a NuttX build for #ifdef __NuttX__ guards
+ * throughout the Mono runtime (e.g. sgen-stw.c stack bounds fix). */
+#ifndef __NuttX__
+#define __NuttX__ 1
+#endif
+
 /* POSIX version — not defined in legacy NuttX unistd.h but the RTOS is
  * POSIX-compliant enough for Mono's purposes (pthreads, signals, etc.) */
 #ifndef _POSIX_VERSION

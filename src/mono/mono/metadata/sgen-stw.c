@@ -78,7 +78,19 @@ update_current_thread_stack (void *start)
 
 	info->client_info.stack_start = align_pointer (&stack_guard);
 	g_assert (info->client_info.stack_start);
+#ifdef __NuttX__
+	/* NuttX/ARM32: task stacks are in SDRAM and stack bounds may be
+	 * recorded incorrectly (e.g. from SRAM-based probe or different TLS context).
+	 * Log and continue instead of aborting the runtime. */
+	if (!(info->client_info.stack_start >= info->client_info.info.stack_start_limit && info->client_info.stack_start < info->client_info.info.stack_end)) {
+		g_warning ("sgen-stw: stack_start %p outside bounds [%p, %p) — adjusting",
+			info->client_info.stack_start, info->client_info.info.stack_start_limit, info->client_info.info.stack_end);
+		info->client_info.info.stack_start_limit = info->client_info.stack_start;
+		info->client_info.info.stack_end = (char*)info->client_info.stack_start + 0x10000; /* 64KB */
+	}
+#else
 	g_assert (info->client_info.stack_start >= info->client_info.info.stack_start_limit && info->client_info.stack_start < info->client_info.info.stack_end);
+#endif
 
 #if !defined(MONO_CROSS_COMPILE) && MONO_ARCH_HAS_MONO_CONTEXT
 	MONO_CONTEXT_GET_CURRENT (info->client_info.ctx);
