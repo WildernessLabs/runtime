@@ -110,7 +110,7 @@ typedef enum {
 
 #define PROFILE_INTERP 0
 
-#if __GNUC__
+#if __GNUC__ && !defined(__NuttX__)
 #define INTERP_ENABLE_SIMD
 #endif
 

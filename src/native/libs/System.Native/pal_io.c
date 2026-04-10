@@ -384,7 +384,19 @@ intptr_t SystemNative_Open(const char* path, int32_t flags, int32_t mode)
 
 int32_t SystemNative_Close(intptr_t fd)
 {
-    int result = close(ToFileDescriptor(fd));
+    int rawFd = ToFileDescriptor(fd);
+
+#ifdef __NuttX__
+    // Belt-and-suspenders: on NuttX, close() on usrsock TCP sockets can block
+    // indefinitely waiting for the TCP FIN handshake through the ESP32 proxy.
+    // The managed Socket close path should call shutdown(SHUT_RDWR) via
+    // TryUnblockSocket (gated on FD_CLOEXEC), but as a safety net we also
+    // do it here. Harmless for non-socket fds (ENOTSOCK) and already-shutdown
+    // sockets (ENOTCONN).
+    shutdown(rawFd, SHUT_RDWR);
+#endif
+
+    int result = close(rawFd);
     if (result < 0 && errno == EINTR) result = 0; // on all supported platforms, close(2) returning EINTR still means it was released
     return result;
 }

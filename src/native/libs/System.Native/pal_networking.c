@@ -2916,7 +2916,7 @@ int32_t SystemNative_Socket(int32_t addressFamily, int32_t socketType, int32_t p
         return SystemNative_ConvertErrorPlatformToPal(errno);
     }
 
-#if !defined(SOCK_CLOEXEC) && !defined(__NuttX__)
+#if !defined(SOCK_CLOEXEC)
     fcntl(ToFileDescriptor(*createdSocket), F_SETFD, FD_CLOEXEC); // ignore any failures; this is best effort
 #endif
     return Error_SUCCESS;
@@ -3603,11 +3603,29 @@ retry:;
         if (rev == 0)
             continue;
 
+        /* POLLNVAL means the fd was closed (likely by another thread during
+         * HttpConnection disposal).  Silently remove the stale registration
+         * rather than dispatching SA_ERROR to potentially-freed managed state. */
+        if (rev & POLLNVAL)
+        {
+            pthread_mutex_lock(&s_nxsock_lock);
+            for (int j = 0; j < s_nxsock_nregs; j++)
+            {
+                if (s_nxsock_regs[j].fd == snap[i].fd)
+                {
+                    s_nxsock_regs[j] = s_nxsock_regs[--s_nxsock_nregs];
+                    break;
+                }
+            }
+            pthread_mutex_unlock(&s_nxsock_lock);
+            continue;  /* Don't dispatch to managed code */
+        }
+
         SocketEvents ev = SocketEvents_SA_NONE;
         if (rev & POLLIN)               ev |= SocketEvents_SA_READ;
         if (rev & POLLOUT)              ev |= SocketEvents_SA_WRITE;
         if (rev & POLLHUP)              ev |= SocketEvents_SA_CLOSE;
-        if (rev & (POLLERR | POLLNVAL)) ev |= SocketEvents_SA_ERROR;
+        if (rev & POLLERR)              ev |= SocketEvents_SA_ERROR;
 
         buffer[n].Data   = snap[i].data;
         buffer[n].Events = (int32_t)ev;
