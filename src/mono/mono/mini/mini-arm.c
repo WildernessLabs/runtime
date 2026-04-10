@@ -338,7 +338,11 @@ emit_call_seq (MonoCompile *cfg, guint8 *code)
 {
 	if (cfg->method->dynamic) {
 		ARM_LDR_IMM (code, ARMREG_IP, ARMREG_PC, ARMDISP_LDRPC);
-		ARM_B (code, 0);
+#ifdef __thumb2__
+		ARM_B_LONG (code, 8); /* Thumb2: B.W targets addr+4, need +8 to skip literal */
+#else
+		ARM_B (code, 0);      /* ARM: B targets addr+8, naturally skips literal */
+#endif
 		*(gpointer*)code = NULL;
 		code += 4;
 		code = emit_call_reg (code, ARMREG_IP);
@@ -4766,7 +4770,11 @@ mono_arch_output_basic_block (MonoCompile *cfg, MonoBasicBlock *bb)
 						code = emit_ldr_imm (code, dreg, var->inst_basereg, var->inst_offset);
 					} else {
 						ARM_LDR_IMM (code, dreg, ARMREG_PC, ARMDISP_LDRPC);
+#ifdef __thumb2__
+						ARM_B_LONG (code, 8);
+#else
 						ARM_B (code, 0);
+#endif
 						*(int*)code = (int)(gsize)ss_trigger_page;
 						code += 4;
 					}
@@ -5043,7 +5051,11 @@ mono_arch_output_basic_block (MonoCompile *cfg, MonoBasicBlock *bb)
 			/* Load the GOT offset */
 			mono_add_patch_info (cfg, offset, (MonoJumpInfoType)(gsize)ins->inst_i1, ins->inst_p0);
 			ARM_LDR_IMM (code, ins->dreg, ARMREG_PC, ARMDISP_LDRPC);
+#ifdef __thumb2__
+			ARM_B_LONG (code, 8);
+#else
 			ARM_B (code, 0);
+#endif
 			*(gpointer*)code = NULL;
 			code += 4;
 			/* Load the value from the GOT */
@@ -5052,7 +5064,11 @@ mono_arch_output_basic_block (MonoCompile *cfg, MonoBasicBlock *bb)
 		case OP_OBJC_GET_SELECTOR:
 			mono_add_patch_info (cfg, offset, MONO_PATCH_INFO_OBJC_SELECTOR_REF, ins->inst_p0);
 			ARM_LDR_IMM (code, ins->dreg, ARMREG_PC, ARMDISP_LDRPC);
+#ifdef __thumb2__
+			ARM_B_LONG (code, 8);
+#else
 			ARM_B (code, 0);
+#endif
 			*(gpointer*)code = NULL;
 			code += 4;
 			ARM_LDR_REG_REG (code, ins->dreg, ARMREG_PC, ins->dreg);
@@ -5215,7 +5231,11 @@ mono_arch_output_basic_block (MonoCompile *cfg, MonoBasicBlock *bb)
 
 				if (cfg->compile_aot) {
 					ARM_LDR_IMM (code, ARMREG_IP, ARMREG_PC, ARMDISP_LDRPC);
+#ifdef __thumb2__
+					ARM_B_LONG (code, 8);
+#else
 					ARM_B (code, 0);
+#endif
 					*(gpointer*)code = NULL;
 					code += 4;
 					ARM_LDR_REG_REG (code, ARMREG_PC, ARMREG_PC, ARMREG_IP);
@@ -6757,7 +6777,11 @@ mono_arch_emit_prolog (MonoCompile *cfg)
 		/* Initialize the variable from a GOT slot */
 		mono_add_patch_info (cfg, GPTRDIFF_TO_INT (code - cfg->native_code), MONO_PATCH_INFO_SEQ_POINT_INFO, cfg->method);
 		ARM_LDR_IMM (code, ARMREG_R0, ARMREG_PC, ARMDISP_LDRPC);
+#ifdef __thumb2__
+		ARM_B_LONG (code, 8);
+#else
 		ARM_B (code, 0);
+#endif
 		*(gpointer*)code = NULL;
 		code += 4;
 		ARM_LDR_REG_REG (code, ARMREG_R0, ARMREG_PC, ARMREG_R0);
@@ -7449,7 +7473,11 @@ mono_arch_set_breakpoint (MonoJitInfo *ji, guint8 *ip)
 
 		/* Read from another trigger page */
 		ARM_LDR_IMM (code, dreg, ARMREG_PC, ARMDISP_LDRPC);
+#ifdef __thumb2__
+		ARM_B_LONG (code, 8);
+#else
 		ARM_B (code, 0);
+#endif
 		*(int*)code = (int)(gssize)bp_trigger_page;
 		code += 4;
 		ARM_LDR_IMM (code, dreg, dreg, 0);
@@ -7739,7 +7767,11 @@ emit_aotconst (MonoCompile *cfg, guint8 *code, int dreg, int patch_type, gpointe
 	/* OP_AOTCONST */
 	mono_add_patch_info (cfg, GPTRDIFF_TO_INT (code - cfg->native_code), (MonoJumpInfoType)patch_type, data);
 	ARM_LDR_IMM (code, dreg, ARMREG_PC, ARMDISP_LDRPC);
+#ifdef __thumb2__
+	ARM_B_LONG (code, 8);
+#else
 	ARM_B (code, 0);
+#endif
 	*(gpointer*)code = NULL;
 	code += 4;
 	/* Load the value from the GOT */
@@ -7754,7 +7786,11 @@ mono_arm_emit_aotconst (gpointer ji_list, guint8 *code, guint8 *buf, int dreg, i
 
 	*ji = mono_patch_info_list_prepend (*ji, GPTRDIFF_TO_INT (code - buf), (MonoJumpInfoType)patch_type, data);
 	ARM_LDR_IMM (code, dreg, ARMREG_PC, ARMDISP_LDRPC);
+#ifdef __thumb2__
+	ARM_B_LONG (code, 8);
+#else
 	ARM_B (code, 0);
+#endif
 	*(gpointer*)code = NULL;
 	code += 4;
 	ARM_LDR_REG_REG (code, dreg, ARMREG_PC, dreg);
