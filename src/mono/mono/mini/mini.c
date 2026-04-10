@@ -2123,6 +2123,15 @@ mono_codegen (MonoCompile *cfg)
 		unwindlen = mono_arch_unwindinfo_init_method_unwind_info (cfg);
 #endif
 
+#ifdef __NuttX__
+	/* NuttX/ARM: JIT code lives in SDRAM (0xC0xxxxxx), kernel code in flash
+	 * (0x0804xxxx). Every cross-region call needs a thunk. At runtime,
+	 * trampoline patching may allocate additional thunks beyond what the
+	 * compiler counted, so double the thunk area to avoid exhaustion. */
+	if (cfg->thunk_area)
+		cfg->thunk_area *= 2;
+#endif
+
 	if (cfg->method->dynamic) {
 		/* Allocate the code into a separate memory pool so it can be freed */
 		cfg->dynamic_info = g_new0 (MonoJitDynamicMethodInfo, 1);
