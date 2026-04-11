@@ -2,13 +2,6 @@
 #include <mono/utils/mono-compiler.h>
 #include "monovm.h"
 
-#ifdef HOST_NUTTX
-#include <syslog.h>
-#define TPA_DIAG(fmt, ...) syslog(LOG_ERR, fmt, ##__VA_ARGS__)
-#else
-#define TPA_DIAG(fmt, ...) do {} while(0)
-#endif
-
 #include <mono/metadata/assembly-internals.h>
 #include <mono/metadata/assembly.h>
 #include <mono/metadata/environment.h>
@@ -116,10 +109,6 @@ mono_core_preload_hook (MonoAssemblyLoadContext *alc, MonoAssemblyName *aname, c
 #endif
 	char *basename = NULL;
 
-	TPA_DIAG("TPA-HOOK-ENTRY: '%s' v%d.%d.%d.%d tpa=%p count=%d\n",
-		aname->name, aname->major, aname->minor, aname->build, aname->revision,
-		(void*)a, a ? a->assembly_count : -1);
-
 	if (a == NULL) // no TPA paths set
 		goto leave;
 
@@ -145,12 +134,9 @@ mono_core_preload_hook (MonoAssemblyLoadContext *alc, MonoAssemblyName *aname, c
 
 			gboolean found = g_file_test (fullpath, G_FILE_TEST_IS_REGULAR);
 
-			TPA_DIAG("TPA-HOOK: '%s' match='%s' found=%d\n", aname->name, fullpath, found);
-
 			if (found) {
 				MonoImageOpenStatus status;
 				result = mono_assembly_request_open (fullpath, &req, &status);
-				TPA_DIAG("TPA-HOOK: open '%s' => result=%p status=%d\n", fullpath, (void*)result, status);
 				/* TODO: do something with the status at the end? */
 				if (result)
 					break;
@@ -191,7 +177,6 @@ leave:
 	g_free (basename);
 
 	if (!result) {
-		TPA_DIAG("TPA-HOOK: FAILED to find '%s' (v%d.%d.%d.%d)\n", aname->name, aname->major, aname->minor, aname->build, aname->revision);
 		mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_ASSEMBLY, "netcore preload hook: did not find '%s'.", aname->name);
 	} else {
 		mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_ASSEMBLY, "netcore preload hook: loading '%s' from '%s'.", aname->name, result->image->name);
