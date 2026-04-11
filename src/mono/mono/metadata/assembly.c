@@ -16,12 +16,6 @@
 #include <errno.h>
 #include <string.h>
 #include <stdlib.h>
-#ifdef HOST_NUTTX
-#include <syslog.h>
-#define ASM_DIAG(fmt, ...) syslog(LOG_ERR, fmt, ##__VA_ARGS__)
-#else
-#define ASM_DIAG(fmt, ...) do {} while(0)
-#endif
 #include <mono/metadata/assembly.h>
 #include "assembly-internals.h"
 #include <mono/metadata/bundled-resources-internals.h>
@@ -746,10 +740,6 @@ netcore_load_reference (MonoAssemblyName *aname, MonoAssemblyLoadContext *alc, M
 	gboolean is_satellite = !mono_assembly_name_culture_is_neutral (aname);
 	gboolean is_default = mono_alc_is_default (alc);
 
-	ASM_DIAG("ASM-RESOLVE: '%s' v%d.%d.%d.%d is_default=%d is_satellite=%d\n",
-		aname->name, aname->major, aname->minor, aname->build, aname->revision,
-		is_default, is_satellite);
-
 	/*
 	 * Try these until one of them succeeds (by returning a non-NULL reference):
 	 * 1. Check if it's already loaded by the ALC.
@@ -780,16 +770,13 @@ netcore_load_reference (MonoAssemblyName *aname, MonoAssemblyLoadContext *alc, M
 
 	reference = mono_assembly_loaded_internal (alc, aname);
 	if (reference) {
-		ASM_DIAG("ASM-RESOLVE: '%s' => step1 already loaded in active ALC\n", aname->name);
 		mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_ASSEMBLY, "Assembly already loaded in the active ALC: '%s'.", aname->name);
 		goto leave;
 	}
 
 	if (!is_default) {
-		ASM_DIAG("ASM-RESOLVE: '%s' => step2 trying ALC Load()\n", aname->name);
 		reference = mono_alc_invoke_resolve_using_load_nofail (alc, aname);
 		if (reference) {
-			ASM_DIAG("ASM-RESOLVE: '%s' => step2 found via ALC Load()\n", aname->name);
 			mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_ASSEMBLY, "Assembly found using Load method: '%s'.", aname->name);
 			goto leave;
 		}
@@ -798,17 +785,14 @@ netcore_load_reference (MonoAssemblyName *aname, MonoAssemblyLoadContext *alc, M
 	if (!is_default && !is_satellite) {
 		reference = mono_assembly_loaded_internal (mono_alc_get_default (), aname);
 		if (reference) {
-			ASM_DIAG("ASM-RESOLVE: '%s' => step3 already loaded in default ALC\n", aname->name);
 			mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_ASSEMBLY, "Assembly already loaded in the default ALC: '%s'.", aname->name);
 			goto leave;
 		}
 	}
 
 	if (mono_bundled_resources_contains_assemblies () && !is_satellite) {
-		ASM_DIAG("ASM-RESOLVE: '%s' => step4 searching bundle\n", aname->name);
 		reference = search_bundle_for_assembly (mono_alc_get_default (), aname);
 		if (reference) {
-			ASM_DIAG("ASM-RESOLVE: '%s' => step4 found in bundle\n", aname->name);
 			mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_ASSEMBLY, "Assembly found in the bundle: '%s'.", aname->name);
 			goto leave;
 		}
@@ -839,14 +823,11 @@ netcore_load_reference (MonoAssemblyName *aname, MonoAssemblyLoadContext *alc, M
 	}
 
 	if (is_default || !is_satellite) {
-		ASM_DIAG("ASM-RESOLVE: '%s' => step6 invoking preload hook (TPA)\n", aname->name);
 		reference = invoke_assembly_preload_hook (mono_alc_get_default (), aname, assemblies_path);
 		if (reference) {
-			ASM_DIAG("ASM-RESOLVE: '%s' => step6 found via preload hook\n", aname->name);
 			mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_ASSEMBLY, "Assembly found with the filesystem probing logic: '%s'.", aname->name);
 			goto leave;
 		}
-		ASM_DIAG("ASM-RESOLVE: '%s' => step6 preload hook returned NULL\n", aname->name);
 	}
 
 	if (is_satellite) {
@@ -883,9 +864,6 @@ netcore_load_reference (MonoAssemblyName *aname, MonoAssemblyLoadContext *alc, M
 	}
 
 leave:
-	if (!reference) {
-		ASM_DIAG("ASM-RESOLVE: '%s' => FAILED (all steps exhausted)\n", aname->name);
-	}
 	return reference;
 }
 
@@ -1910,7 +1888,6 @@ mono_assembly_request_load_from (MonoImage *image, const char *fname,
 
 	if (!table_info_get_rows (&image->tables [MONO_TABLE_ASSEMBLY])) {
 		/* 'image' doesn't have a manifest -- maybe someone is trying to Assembly.Load a .netmodule */
-		ASM_DIAG("ASM-LOAD-FROM: '%s' REJECTED — no manifest (not an assembly?)\n", fname);
 		*status = MONO_IMAGE_IMAGE_INVALID;
 		return NULL;
 	}
@@ -1983,7 +1960,6 @@ mono_assembly_request_load_from (MonoImage *image, const char *fname,
 	{
 		ERROR_DECL (refasm_error);
 		if (mono_assembly_has_reference_assembly_attribute (ass, refasm_error)) {
-			ASM_DIAG("ASM-LOAD-FROM: '%s' (%s) REJECTED — has ReferenceAssemblyAttribute!\n", ass->aname.name, image->name);
 			mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_ASSEMBLY, "Image for assembly '%s' (%s) has ReferenceAssemblyAttribute, skipping", ass->aname.name, image->name);
 			g_free (ass);
 			g_free (base_dir);
@@ -1995,11 +1971,6 @@ mono_assembly_request_load_from (MonoImage *image, const char *fname,
 	}
 
 	if (predicate && !predicate (ass, user_data)) {
-		ASM_DIAG("ASM-LOAD-FROM: '%s' (%s) REJECTED by predicate (version mismatch?) wanted v%d.%d.%d.%d, got v%d.%d.%d.%d\n",
-			ass->aname.name, image->name,
-			((MonoAssemblyName*)user_data)->major, ((MonoAssemblyName*)user_data)->minor,
-			((MonoAssemblyName*)user_data)->build, ((MonoAssemblyName*)user_data)->revision,
-			ass->aname.major, ass->aname.minor, ass->aname.build, ass->aname.revision);
 		mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_ASSEMBLY, "Predicate returned FALSE, skipping '%s' (%s)\n", ass->aname.name, image->name);
 		g_free (ass);
 		g_free (base_dir);
