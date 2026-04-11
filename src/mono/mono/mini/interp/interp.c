@@ -1409,51 +1409,9 @@ typedef struct {
  * TO the struct, adding an extra indirection that breaks icalls expecting the
  * struct's VALUE.
  *
- * This is critical on interpreter-only platforms (WASM, NuttX) where there's
+ * This is critical on interpreter-only platforms (WASM) where there's
  * no JIT to emit correct by-value passing via registers.
  */
-#if defined(__NuttX__)
-static gboolean
-mini_interp_is_scalar_vtype (MonoType *type, MonoType **etype)
-{
-	MonoClass *klass;
-	MonoClassField *field;
-	gpointer iter;
-
-	if (etype)
-		*etype = NULL;
-
-	if (!MONO_TYPE_ISSTRUCT (type))
-		return FALSE;
-	klass = mono_class_from_mono_type_internal (type);
-	mono_class_init_internal (klass);
-
-	int size = mono_class_value_size (klass, NULL);
-	if (size == 0 || size > SIZEOF_VOID_P)
-		return FALSE;
-
-	iter = NULL;
-	int nfields = 0;
-	field = NULL;
-	while ((field = mono_class_get_fields_internal (klass, &iter))) {
-		if (field->type->attrs & FIELD_ATTRIBUTE_STATIC)
-			continue;
-		nfields++;
-		if (nfields > 1)
-			return FALSE;
-		MonoType *t = mini_get_underlying_type (field->type);
-		if (!(MONO_TYPE_IS_PRIMITIVE (t) || MONO_TYPE_IS_REFERENCE (t) || MONO_TYPE_IS_POINTER (t)))
-			return FALSE;
-		if (etype)
-			*etype = t;
-	}
-
-	if (nfields == 0)
-		return FALSE;
-
-	return TRUE;
-}
-#endif
 
 static MonoType *
 filter_type_for_args_from_sig (MonoType *type) {
@@ -1461,10 +1419,6 @@ filter_type_for_args_from_sig (MonoType *type) {
 	MonoType *etype;
 	if (MONO_TYPE_ISSTRUCT (type) && mini_wasm_is_scalar_vtype (type, &etype))
 		// FIXME: Does this need to be recursive?
-		return etype;
-#elif defined(__NuttX__)
-	MonoType *etype;
-	if (MONO_TYPE_ISSTRUCT (type) && mini_interp_is_scalar_vtype (type, &etype))
 		return etype;
 #endif
 	return type;
@@ -1539,12 +1493,6 @@ retry:
 				/* Scalar vtypes are passed by value */
 				// FIXME: r4/r8
 				if (mini_wasm_is_scalar_vtype (sig->params [i], &etype) && etype->type != MONO_TYPE_R4 && etype->type != MONO_TYPE_R8)
-					info->arg_types [i] = PINVOKE_ARG_SCALAR_VTYPE;
-			}
-#elif defined(__NuttX__)
-			{
-				MonoType *etype;
-				if (mini_interp_is_scalar_vtype (sig->params [i], &etype) && etype->type != MONO_TYPE_R4 && etype->type != MONO_TYPE_R8)
 					info->arg_types [i] = PINVOKE_ARG_SCALAR_VTYPE;
 			}
 #endif
@@ -1633,7 +1581,7 @@ retry:
 static void
 build_args_from_sig (InterpMethodArguments *margs, MonoMethodSignature *sig, BuildArgsFromSigInfo *info, InterpFrame *frame)
 {
-#if defined(TARGET_WASM) || defined(__NuttX__)
+#if defined(TARGET_WASM)
 	margs->sig = sig;
 #endif
 
@@ -1814,7 +1762,7 @@ interp_to_native_trampoline (gpointer addr, gpointer ccontext)
 	get_interp_to_native_trampoline () (addr, ccontext);
 }
 
-#if defined(HOST_WASM) || defined(HOST_NUTTX)
+#if defined(HOST_WASM)
 typedef struct {
 	MonoPIFunc entry_func;
 	BuildArgsFromSigInfo *call_info;
@@ -1850,7 +1798,7 @@ ves_pinvoke_method (
 
 	MONO_REQ_GC_UNSAFE_MODE;
 
-#if defined(HOST_WASM) || defined(HOST_NUTTX)
+#if defined(HOST_WASM)
 	/*
 	 * Use a per-signature entry function.
 	 * Cache it in imethod->data_items.
@@ -1860,11 +1808,7 @@ ves_pinvoke_method (
 	PInvokeCacheData *cache_data = (PInvokeCacheData*)*cache;
 	if (!cache_data) {
 		cache_data = g_new0 (PInvokeCacheData, 1);
-#if defined(HOST_WASM)
 		cache_data->entry_func = (MonoPIFunc)mono_wasm_get_interp_to_native_trampoline (sig);
-#elif defined(HOST_NUTTX)
-		cache_data->entry_func = (MonoPIFunc)mono_nuttx_get_interp_to_native_trampoline (sig);
-#endif
 		cache_data->call_info = get_build_args_from_sig_info (get_default_mem_manager (), sig);
 		mono_memory_barrier ();
 		*cache = cache_data;
@@ -1903,7 +1847,7 @@ ves_pinvoke_method (
 	args = &ccontext;
 #else
 
-#if defined(HOST_WASM) || defined(HOST_NUTTX)
+#if defined(HOST_WASM)
 	BuildArgsFromSigInfo *call_info = cache_data->call_info;
 #else
 	BuildArgsFromSigInfo *call_info = NULL;
@@ -3613,26 +3557,6 @@ interp_create_method_pointer (MonoMethod *method, gboolean compile, MonoError *e
 		g_free (s);
 		g_free (msg);
 		return NULL;
-	}
-#elif defined(__NuttX__)
-	{
-		/*
-		 * NuttX: allocate a native-to-interp thunk from the pre-compiled
-		 * thunk pool.  Each thunk is a unique function pointer that saves
-		 * ARM registers into a CallContext, then calls
-		 * interp_entry_from_trampoline(ccontext, imethod).
-		 */
-		MonoFtnDesc *ftndesc = g_new0 (MonoFtnDesc, 1);
-		ftndesc->addr = (gpointer)interp_entry_from_trampoline;
-		ftndesc->arg = imethod;
-
-		addr = mono_nuttx_get_native_to_interp_trampoline (method, ftndesc);
-		if (addr) {
-			mono_memory_barrier ();
-			imethod->jit_entry = addr;
-			return addr;
-		}
-		/* Pool exhausted — fall through to error */
 	}
 #endif
 	return (gpointer)interp_no_native_to_managed;

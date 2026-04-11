@@ -366,17 +366,12 @@ typedef struct MonoCompileArch {
 #define MONO_ARCH_FLOAT32_SUPPORTED 1
 #define MONO_ARCH_LLVM_TARGET_LAYOUT "e-p:32:32-n32-S64"
 
-/* NuttX JIT: enable all trampoline macros (same as other platforms).
- * The per-signature C wrappers in aot-runtime-nuttx.c remain available
- * as fallback for interpreter-mode P/Invoke if needed. */
+/* Trampoline macros — JIT trampolines via CallContext.
+ * arm-codegen.h redirects to thumb-codegen.h when __thumb2__ is defined,
+ * so all ARM_* codegen macros emit valid Thumb2 instructions on Cortex-M. */
 #define MONO_ARCH_HAVE_INTERP_ENTRY_TRAMPOLINE 1
 #define MONO_ARCH_HAVE_FTNPTR_ARG_TRAMPOLINE 1
-#ifndef __NuttX__
-/* NuttX/Cortex-M is Thumb-only; the JIT trampoline in tramp-arm.c emits
-   ARM-mode instructions via arm-codegen.h that decode as garbage on Cortex-M.
-   Use the per-signature C trampolines (nuttx_m2n_invoke.g.h) instead. */
 #define MONO_ARCH_HAVE_INTERP_PINVOKE_TRAMP 1
-#endif
 #define MONO_ARCH_HAVE_INTERP_NATIVE_TO_MANAGED 1
 
 #if defined(TARGET_WATCHOS) || (defined(__linux__) && !defined(TARGET_ANDROID) && !defined(TARGET_LINUX_MUSL))
