@@ -1790,53 +1790,21 @@ typedef enum {
 
 #ifdef __NuttX__
 /*
- * NuttX QCallTypeHandle workaround:
- * On the Mono interpreter + ARM32, QCallTypeHandle.type sometimes contains
- * the field ADDRESS (ptr+8) instead of the field VALUE (MonoType*).
- * Detect this by checking type->type == 0 (MONO_TYPE_END) and recover
- * the real MonoType* from the MonoReflectionType object at _ptr.
- *
- * _ptr points to the MonoReflectionType (RuntimeType) object on the
- * managed heap.  Its layout: { MonoObject (8 bytes), MonoType *type, ... }.
- * So the real MonoType* is at *(MonoType**)((char*)_ptr + 8).
+ * NuttX QCallTypeHandle validation:
+ * Previously, WASM-style trampolines caused QCallTypeHandle.type to contain
+ * a field ADDRESS instead of the field VALUE (MONO_TYPE_END / type==0).
+ * Now using JIT trampolines — this should no longer happen.  Assert to verify.
  */
-static MonoType *
+static inline MonoType *
 nuttx_resolve_qcall_type (MonoQCallTypeHandle *th)
 {
 	MonoType *t = th->type;
-	if (t && t->type != 0)
-		return t;
-
-	/* Try to recover from _ptr (MonoReflectionType*) */
-	if (th->_ptr) {
-		MonoReflectionType *rtype = (MonoReflectionType *)th->_ptr;
-		MonoType *recovered = rtype->type;
-		if (recovered && recovered->type != 0) {
-			g_warning ("nuttx_resolve_qcall_type: recovered type=%p (type_enum=%d) "
-				"from _ptr=%p (was type=%p type_enum=%d)\n",
-				(void *)recovered, recovered->type,
-				th->_ptr, (void *)t, t ? t->type : -1);
-			return recovered;
-		}
-
-		/* _ptr might be a ref (pointer to object pointer) */
-		MonoReflectionType *rtype2 = *(MonoReflectionType **)th->_ptr;
-		if (rtype2 && rtype2->type && rtype2->type->type != 0) {
-			g_warning ("nuttx_resolve_qcall_type: recovered type=%p (type_enum=%d) "
-				"via deref _ptr=%p -> %p\n",
-				(void *)rtype2->type, rtype2->type->type,
-				th->_ptr, (void *)rtype2);
-			return rtype2->type;
-		}
-
-		g_warning ("nuttx_resolve_qcall_type: FAILED _ptr=%p, type=%p, "
-			"rtype->type=%p, *(void**)_ptr=%p\n",
-			th->_ptr, (void *)t,
-			(void *)(rtype ? rtype->type : NULL),
-			*(void **)th->_ptr);
+	if (G_UNLIKELY (!t || t->type == 0)) {
+		g_error ("QCallTypeHandle has bad type=%p (type_enum=%d, _ptr=%p). "
+			"JIT trampolines should have fixed this — investigate.",
+			(void *)t, t ? t->type : -1, th->_ptr);
 	}
-
-	return t; /* Fall through to existing error handling */
+	return t;
 }
 #endif
 
