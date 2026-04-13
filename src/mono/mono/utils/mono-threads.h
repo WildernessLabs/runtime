@@ -234,6 +234,16 @@ typedef struct _MonoThreadInfo {
 	MonoSemType finish_resume_semaphore;
 	gboolean syscall_break_signal;
 	int signal;
+#ifdef HOST_NUTTX
+	/* Semaphore workaround for preemptive suspend on NuttX.
+	 * NuttX cannot deliver nested signals (up_schedule_sigaction refuses
+	 * when a signal handler is already active), so sigsuspend() in the
+	 * suspend handler deadlocks waiting for the restart signal.
+	 * This semaphore replaces sigsuspend/restart-signal with sem_wait/sem_post.
+	 * Default NuttX build uses cooperative suspend (ENABLE_COOP_SUSPEND) and
+	 * never exercises this field.  Untested on hardware. */
+	MonoSemType nuttx_signal_resume_sem;
+#endif
 #endif
 
 	gboolean suspend_can_continue;

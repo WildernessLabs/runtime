@@ -408,6 +408,9 @@ free_thread_info (gpointer mem)
 	MonoThreadInfo *info = (MonoThreadInfo *) mem;
 
 	mono_os_sem_destroy (&info->resume_semaphore);
+#ifdef HOST_NUTTX
+	mono_os_sem_destroy (&info->nuttx_signal_resume_sem);
+#endif
 	mono_threads_suspend_free (info);
 
 	g_free (info);
@@ -512,6 +515,9 @@ register_thread (MonoThreadInfo *info)
 	mono_os_event_init (&info->handle->event, FALSE);
 
 	mono_os_sem_init (&info->resume_semaphore, 0);
+#ifdef HOST_NUTTX
+	mono_os_sem_init (&info->nuttx_signal_resume_sem, 0);
+#endif
 
 	/*set TLS early so SMR works */
 	mono_native_tls_set_value (thread_info_key, info);

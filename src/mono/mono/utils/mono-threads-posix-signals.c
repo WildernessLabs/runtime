@@ -194,6 +194,27 @@ suspend_signal_handler (int _dummy, siginfo_t *info, void *context)
 	if (!current->suspend_can_continue)
 		THREADS_SUSPEND_DEBUG ("\tThread is starting or detaching, failed to capture state %p\n", mono_thread_info_get_tid (current));
 
+#ifdef HOST_NUTTX
+	/* NuttX semaphore-based suspend wait (preemptive mode workaround).
+	 *
+	 * NuttX's up_schedule_sigaction (armv7-m) refuses to deliver a signal
+	 * while another signal handler is already active — no nested signals.
+	 * The restart signal (21) cannot be dispatched while this suspend
+	 * handler is running, so sigsuspend() would deadlock.
+	 *
+	 * This path replaces sigsuspend + restart-signal with a kernel
+	 * semaphore (sem_wait/sem_post), which bypasses signal delivery
+	 * entirely.  The corresponding sem_post is in
+	 * mono_threads_suspend_begin_async_resume() in mono-threads-posix.c.
+	 *
+	 * NOTE: The default NuttX build uses cooperative suspend
+	 * (ENABLE_COOP_SUSPEND) which never enters this signal handler.
+	 * This code path exists as an alternative for preemptive/hybrid
+	 * suspend on NuttX but has NOT been validated on hardware.
+	 * See CMakeLists.txt GC_SUSPEND section for details. */
+	mono_threads_notify_initiator_of_suspend (current);
+	mono_os_sem_wait (&current->nuttx_signal_resume_sem, MONO_SEM_FLAGS_NONE);
+#else
 	/*
 	Block the restart signal.
 	We need to block the restart signal while posting to the suspend_ack semaphore or we race to sigsuspend,
@@ -211,6 +232,7 @@ suspend_signal_handler (int _dummy, siginfo_t *info, void *context)
 
 	/* Unblock the restart signal. */
 	pthread_sigmask (SIG_UNBLOCK, &suspend_ack_signal_mask, NULL);
+#endif
 
 	if (current->async_target) {
 #if MONO_ARCH_HAS_MONO_CONTEXT
