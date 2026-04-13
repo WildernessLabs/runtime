@@ -2140,10 +2140,10 @@ major_free_swept_blocks (size_t section_reserve)
 {
 	SGEN_ASSERT (0, sweep_state == SWEEP_STATE_SWEPT, "Sweeping must have finished before freeing blocks");
 
-#if defined(HOST_WIN32) || defined(HOST_ORBIS)
+#if defined(HOST_WIN32) || defined(HOST_ORBIS) || defined(HOST_NUTTX)
 		/*
 		 * sgen_free_os_memory () asserts in mono_vfree () because windows doesn't like freeing the middle of
-		 * a VirtualAlloc ()-ed block.
+		 * a VirtualAlloc ()-ed block. NuttX uses memalign() — same constraint (can't free interior pointers).
 		 */
 		return;
 #endif

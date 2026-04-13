@@ -373,6 +373,17 @@ This begins async resume. This function must do the following:
 gboolean
 mono_threads_suspend_begin_async_resume (MonoThreadInfo *info)
 {
+#ifdef HOST_NUTTX
+	/* NuttX semaphore-based resume (preemptive mode workaround).
+	 * Pairs with sem_wait in suspend_signal_handler (mono-threads-posix-signals.c).
+	 * See that file for the full explanation of the nested-signal limitation.
+	 *
+	 * NOTE: Default NuttX build uses cooperative suspend and never reaches
+	 * this code.  This path is untested on hardware. */
+	mono_os_sem_post (&info->nuttx_signal_resume_sem);
+	mono_threads_add_to_pending_operation_set (info);
+	return TRUE;
+#else
 	int sig = mono_threads_suspend_get_restart_signal ();
 
 	if (!mono_threads_pthread_kill (info, sig)) {
@@ -380,6 +391,7 @@ mono_threads_suspend_begin_async_resume (MonoThreadInfo *info)
 		return TRUE;
 	}
 	return FALSE;
+#endif
 }
 
 void

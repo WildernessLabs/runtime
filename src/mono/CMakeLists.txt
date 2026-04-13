@@ -781,7 +781,15 @@ elseif(GC_SUSPEND STREQUAL "default")
   elseif(TARGET_SYSTEM_NAME STREQUAL "WASI")
     # use preemptive
   elseif(TARGET_NUTTX)
-    # use preemptive for NuttX RTOS
+    # NuttX cooperative suspend: NuttX's up_schedule_sigaction (armv7-m) refuses
+    # to deliver a signal while another signal handler is already active — there
+    # is no nested signal support.  Preemptive suspend sends a suspend signal
+    # whose handler calls sigsuspend() to wait for a restart signal, but the
+    # restart signal can never be delivered (nested), causing a deadlock.
+    # Legacy Mono solved this with --enable-cooperative-suspend (cf438e3045).
+    # A semaphore-based workaround for preemptive mode also exists in the posix
+    # signal/thread code (#ifdef HOST_NUTTX) but remains untested on hardware.
+    set(ENABLE_COOP_SUSPEND 1)
   else()
     set(ENABLE_HYBRID_SUSPEND 1)
   endif()

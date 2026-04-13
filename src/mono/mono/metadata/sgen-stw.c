@@ -83,8 +83,7 @@ update_current_thread_stack (void *start)
 	 * recorded incorrectly (e.g. from SRAM-based probe or different TLS context).
 	 * Log and continue instead of aborting the runtime. */
 	if (!(info->client_info.stack_start >= info->client_info.info.stack_start_limit && info->client_info.stack_start < info->client_info.info.stack_end)) {
-		g_warning ("sgen-stw: stack_start %p outside bounds [%p, %p) — adjusting",
-			info->client_info.stack_start, info->client_info.info.stack_start_limit, info->client_info.info.stack_end);
+		/* Stack bounds mismatch on NuttX — widen to cover current SP */
 		info->client_info.info.stack_start_limit = info->client_info.stack_start;
 		info->client_info.info.stack_end = (char*)info->client_info.stack_start + 0x10000; /* 64KB */
 	}
@@ -136,12 +135,24 @@ sgen_client_stop_world_thread_stopped_callback (THREAD_INFO_TYPE *info)
 
 	if (info->client_info.stack_start < info->client_info.info.stack_start_limit
 			|| info->client_info.stack_start >= info->client_info.info.stack_end) {
+#ifdef __NuttX__
+		/* NuttX passes NULL ucontext to signal handlers (sig_deliver.c), so
+		 * the saved SP may be 0 or garbage when captured via MONO_CONTEXT_GET_CURRENT
+		 * inside the signal handler.  Rather than skipping this thread (which
+		 * causes the GC to miss roots and move objects without updating
+		 * references), scan the entire registered stack range.  Conservative
+		 * scanning tolerates the wider range.
+		 * NOTE: Do NOT log here (g_warning, etc.) — the log lock may be held
+		 * by a suspended thread, causing a deadlock during stop-the-world. */
+		info->client_info.stack_start = info->client_info.info.stack_start_limit;
+#else
 		/*
 			* Thread context is in unhandled state, most likely because it is
 			* dying. We don't scan it.
 			* FIXME We should probably rework and check the valid flag instead.
 			*/
 		info->client_info.stack_start = NULL;
+#endif
 	}
 
 	sgen_binary_protocol_thread_suspend ((gpointer)(gsize)mono_thread_info_get_tid (info), (gpointer) (MONO_CONTEXT_GET_IP (&info->client_info.ctx)));
@@ -304,6 +315,26 @@ is_thread_in_current_stw (SgenThreadInfo *info, int *reason)
 			*reason = 5;
 		return FALSE;
 	}
+
+#ifdef __NuttX__
+	/*
+	 * On NuttX, threads may die without properly detaching from Mono
+	 * (e.g., task_delete or abnormal exit).  Their MonoThreadInfo remains
+	 * in the thread list with STATE_RUNNING, but the native task no longer
+	 * exists.  In cooperative suspend mode, we'd add them to pending
+	 * operations and wait forever for a self-suspend that can never happen.
+	 * Detect this by probing the native thread with signal 0.
+	 */
+	{
+		MonoNativeThreadId tid = mono_thread_info_get_tid (info);
+		if (kill ((pid_t)(gsize)tid, 0) != 0) {
+			info->client_info.skip = TRUE;
+			if (reason)
+				*reason = 6;
+			return FALSE;
+		}
+	}
+#endif
 
 	return TRUE;
 }
