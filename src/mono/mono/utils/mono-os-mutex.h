@@ -102,7 +102,12 @@ mono_os_mutex_lock (mono_mutex_t *mutex)
 {
 	int res;
 
-	res = pthread_mutex_lock (mutex);
+	/* NuttX pthread_mutex_lock can return EINTR when a signal interrupts the
+	 * underlying semaphore wait (POSIX says it should not).  Even under
+	 * cooperative GC suspend, Mono's abort signal is still delivered to break
+	 * threads out of blocking syscalls during STW.  Legacy Meadow Mono had
+	 * this same retry (mono/mono@553bcc82746).  */
+	while (G_UNLIKELY ((res = pthread_mutex_lock (mutex)) == EINTR));
 	if (G_UNLIKELY (res != 0))
 		g_error ("%s: pthread_mutex_lock failed with \"%s\" (%d)", __func__, g_strerror (res), res);
 }
