@@ -75,7 +75,7 @@
 #define HAVE_FALLOCATE              0
 #define HAVE_INOTIFY                0  /* No inotify on NuttX */
 #define HAVE_MKSTEMPS               0
-#define HAVE_MKSTEMP                0  /* NuttX may not have mkstemp */
+#define HAVE_MKSTEMP                1
 
 /* ------------------------------------------------------------------ */
 /* Memory allocation                                                   */
@@ -97,7 +97,7 @@
 /* ------------------------------------------------------------------ */
 #define HAVE_GNU_STRERROR_R         0  /* NuttX strerror_r is POSIX, not GNU */
 #define HAVE_STRCPY_S               0
-#define HAVE_STRLCPY                0
+#define HAVE_STRLCPY                1
 
 /* ------------------------------------------------------------------ */
 /* Shared memory                                                       */
@@ -122,7 +122,7 @@
 /* ------------------------------------------------------------------ */
 /* Networking                                                          */
 /* ------------------------------------------------------------------ */
-#define HAVE_GETIFADDRS             0
+#define HAVE_GETIFADDRS             1
 #define HAVE_UTSNAME_DOMAINNAME     0
 #define HAVE_GETHOSTNAME            1
 #define HAVE_GETNAMEINFO            0
@@ -191,7 +191,7 @@
 /* ------------------------------------------------------------------ */
 #define HAVE_TERMIOS_H              1
 #define HAVE_CFSETSPEED             0
-#define HAVE_CFMAKERAW              0
+#define HAVE_CFMAKERAW              1
 #define HAVE_TERMIOS2               0
 
 /* ------------------------------------------------------------------ */

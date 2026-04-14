@@ -38,6 +38,8 @@
 #include <netinet/tcp.h>
 #if HAVE_NET_IF_H
 #include <net/if.h>
+#elif defined(__NuttX__)
+#include <net/if.h>
 #endif
 #include <string.h>
 #include <sys/ioctl.h>
@@ -3016,7 +3018,7 @@ int32_t SystemNative_GetAtOutOfBandMark(intptr_t socket, int32_t* atMark)
 
     int result;
     int err;
-    while ((err = ioctl(fd, SIOCATMARK, &result)) < 0 && errno == EINTR);
+    while ((err = ioctl(fd, SIOCATMARK, (unsigned long)&result)) < 0 && errno == EINTR);
     if (err == -1)
     {
         *atMark = 0;
@@ -3041,7 +3043,7 @@ int32_t SystemNative_GetBytesAvailable(intptr_t socket, int32_t* available)
 
     int result;
     int err;
-    while ((err = ioctl(fd, FIONREAD, &result)) < 0 && errno == EINTR);
+    while ((err = ioctl(fd, FIONREAD, (unsigned long)&result)) < 0 && errno == EINTR);
     if (err == -1)
     {
         *available = 0;
