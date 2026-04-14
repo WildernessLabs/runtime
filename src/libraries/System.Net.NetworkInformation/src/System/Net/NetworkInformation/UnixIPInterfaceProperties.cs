@@ -90,7 +90,7 @@ namespace System.Net.NetworkInformation
             {
                 return StringParsingHelpers.ParseDnsSuffixFromResolvConfFile(File.ReadAllText(NetworkFiles.EtcResolvConfFile));
             }
-            catch (FileNotFoundException)
+            catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException or UnauthorizedAccessException)
             {
                 return null;
             }
@@ -103,7 +103,7 @@ namespace System.Net.NetworkInformation
                 List<IPAddress> internalAddresses = StringParsingHelpers.ParseDnsAddressesFromResolvConfFile(File.ReadAllText(NetworkFiles.EtcResolvConfFile));
                 return new InternalIPAddressCollection(internalAddresses);
             }
-            catch (FileNotFoundException)
+            catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException or UnauthorizedAccessException)
             {
                 return new InternalIPAddressCollection();
             }

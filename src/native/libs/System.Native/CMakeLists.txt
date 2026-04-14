@@ -20,7 +20,12 @@ if(CMAKE_SYSTEM_VARIANT STREQUAL "nuttx")
     pal_environment.c
     pal_searchpath.c
     pal_iossupportversion.c
+    pal_interfaceaddresses.c
+    pal_networkchange.c
+    pal_networkstatistics.c
+    pal_tcpstate.c
     # pal_console.c excluded — needs NuttX-specific atexit/signal patches (future track)
+    # pal_maphardwaretype.c excluded — needs AF_PACKET sockaddr_ll which NuttX lacks
   )
 
   add_library(System.Native-Static STATIC ${NUTTX_NATIVE_SOURCES})

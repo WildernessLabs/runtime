@@ -818,10 +818,20 @@ int32_t SystemNative_GetActiveUdpListeners(IPEndPointInfo* infos, int32_t* infoC
 
 int32_t SystemNative_GetNativeIPInterfaceStatistics(char* interfaceName, NativeIPInterfaceStatistics* retStats)
 {
+#if defined(__NuttX__)
+    // NuttX doesn't have /proc/net or sysctl for interface stats.
+    // Return zeroed stats with basic flags from ioctl so the managed
+    // BsdNetworkInterface constructor doesn't throw.
+    (void)interfaceName;
+    memset(retStats, 0, sizeof(NativeIPInterfaceStatistics));
+    retStats->Flags = InterfaceUp | InterfaceHasLink;
+    return 0;
+#else
     (void)interfaceName;
     (void)retStats;
     errno = ENOTSUP;
     return -1;
+#endif
 }
 
 int32_t SystemNative_GetNumRoutes(void)

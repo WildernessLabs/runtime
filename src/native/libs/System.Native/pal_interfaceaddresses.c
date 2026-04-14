@@ -25,6 +25,8 @@
 #endif
 #if HAVE_NET_IF_H
 #include <net/if.h>
+#elif defined(__NuttX__)
+#include <net/if.h>
 #endif
 #include <netinet/in.h>
 #include <string.h>
@@ -53,6 +55,13 @@
 #undef AF_PACKET
 #endif
 
+// NuttX defines AF_PACKET but its sockaddr_ll is incomplete (missing
+// sll_halen, sll_hatype, sll_addr).  NuttX getifaddrs() only returns
+// AF_INET entries anyway — hardware addresses come via ifa_data.
+#if defined(__NuttX__)
+#undef AF_PACKET
+#endif
+
 #if defined(AF_PACKET)
 #include <sys/ioctl.h>
 #if HAVE_NETPACKET_PACKET_H
@@ -63,7 +72,7 @@
 #elif defined(AF_LINK)
 #include <net/if_dl.h>
 #include <net/if_types.h>
-#elif defined(TARGET_WASI)
+#elif defined(TARGET_WASI) || defined(__NuttX__)
 #else
 #error System must have AF_PACKET or AF_LINK.
 #endif
@@ -182,6 +191,13 @@ int32_t SystemNative_EnumerateInterfaceAddresses(void* context,
             continue;
         }
         uint32_t interfaceIndex = if_nametoindex(ifa_name);
+#if defined(__NuttX__)
+        // NuttX if_indextoname may not work reliably. Skip the alias check
+        // and use ifa_name directly — NuttX does not support interface aliases.
+        char actualName[IF_NAMESIZE];
+        strncpy(actualName, ifa_name, IF_NAMESIZE - 1);
+        actualName[IF_NAMESIZE - 1] = '\0';
+#else
         // ifa_name may be an aliased interface name.
         // Use if_indextoname to map back to the true device name.
         char actualName[IF_NAMESIZE];
@@ -193,6 +209,7 @@ int32_t SystemNative_EnumerateInterfaceAddresses(void* context,
         }
 
         assert(result == actualName);
+#endif
         int family = current->ifa_addr->sa_family;
         if (family == AF_INET)
         {

@@ -71,6 +71,26 @@ char *mkdtemp(char *tmpl);
  * mktemp() (which has wrong return type on legacy NuttX). */
 #define HAVE_MKDTEMP 1
 
+/* _POSIX_HOST_NAME_MAX — not in NuttX limits.h; use HOST_NAME_MAX */
+#ifndef _POSIX_HOST_NAME_MAX
+#define _POSIX_HOST_NAME_MAX 255
+#endif
+
+/* IFF_LOOPBACK, IFF_MULTICAST, IFF_BROADCAST, IFF_ALLMULTI — standard POSIX
+ * interface flags missing from NuttX <net/if.h> */
+#ifndef IFF_LOOPBACK
+#define IFF_LOOPBACK   (1 << 4)
+#endif
+#ifndef IFF_BROADCAST
+#define IFF_BROADCAST  (1 << 5)
+#endif
+#ifndef IFF_MULTICAST
+#define IFF_MULTICAST  (1 << 6)
+#endif
+#ifndef IFF_ALLMULTI
+#define IFF_ALLMULTI    (1 << 8)
+#endif
+
 /* SA_RESTART — not defined in legacy NuttX signal.h */
 #ifndef SA_RESTART
 #define SA_RESTART 0x10000000
