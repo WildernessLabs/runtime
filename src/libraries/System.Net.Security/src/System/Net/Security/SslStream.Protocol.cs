@@ -1040,8 +1040,14 @@ namespace System.Net.Security
 
                 if (certificate == null)
                 {
-                    if (NetEventSource.Log.IsEnabled() && RemoteCertRequired) NetEventSource.Error(this, $"Remote certificate required, but no remote certificate received");
-                    sslPolicyErrors |= SslPolicyErrors.RemoteCertificateNotAvailable;
+                    // If the native TLS layer (e.g. mbedTLS on NuttX) already verified the
+                    // peer certificate during handshake, don't flag it as unavailable.
+                    // The cert is validated but can't be extracted into managed X509Certificate2.
+                    if (!CertificateValidationPal.NativeVerifiedPeerCertificate(_securityContext))
+                    {
+                        if (NetEventSource.Log.IsEnabled() && RemoteCertRequired) NetEventSource.Error(this, $"Remote certificate required, but no remote certificate received");
+                        sslPolicyErrors |= SslPolicyErrors.RemoteCertificateNotAvailable;
+                    }
                 }
                 else
                 {

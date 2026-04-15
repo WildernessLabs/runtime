@@ -95,6 +95,20 @@ namespace System.Net
             return result;
         }
 
+        /// <summary>
+        /// Checks whether the native TLS handshake completed successfully, meaning the
+        /// native layer (mbedTLS on NuttX) handled certificate validation per its configured
+        /// authmode. When true and GetPeerCertificate returns null, the managed layer can
+        /// skip RemoteCertificateNotAvailable — the cert was validated but can't be
+        /// extracted into X509Certificate2.
+        /// On OpenSSL this is never needed (GetPeerCertificate returns a real cert).
+        /// </summary>
+        internal static bool NativeVerifiedPeerCertificate(SafeDeleteContext? securityContext)
+        {
+            if (securityContext == null) return false;
+            return Interop.OpenSsl.GetPeerCertVerifyResult((SafeSslHandle)securityContext) == 0;
+        }
+
         internal static bool IsLocalCertificateUsed(SafeFreeCredentials? _1, SafeDeleteContext? ctx)
         {
             if (ctx is not SafeSslHandle ssl)
