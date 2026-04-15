@@ -8,7 +8,9 @@
 # Required variables (pass via -D or environment):
 #   NUTTX_INCLUDE_DIR  — Path to NuttX include/ directory (for pthread.h, etc.)
 
-cmake_minimum_required(VERSION 3.26)
+# cmake_minimum_required is set in the project CMakeLists.txt, not here.
+# Toolchain files are loaded before project() — setting it here can
+# cause version conflicts with the invoking CMake.
 
 # Use "Generic" since CMake doesn't have a built-in NuttX system name.
 # We set CMAKE_SYSTEM_VARIANT to "nuttx" so CMakeLists.txt can detect it.
