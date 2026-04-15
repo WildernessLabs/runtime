@@ -85,8 +85,7 @@ set(mini_common_sources
     aot-compiler.c
     aot-runtime.c
     aot-runtime-wasm.c
-    aot-runtime-nuttx.c
-    nuttx_m2n_invoke.g.h
+
     graph.c
     mini-codegen.c
     mini-exceptions.c
