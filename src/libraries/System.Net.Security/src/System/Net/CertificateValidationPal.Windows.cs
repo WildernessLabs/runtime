@@ -14,6 +14,8 @@ namespace System.Net
 {
     internal static partial class CertificateValidationPal
     {
+        internal static bool NativeVerifiedPeerCertificate(SafeDeleteContext? securityContext) => false;
+
         internal static SslPolicyErrors VerifyCertificateProperties(
             SafeDeleteContext? _ /*securityContext*/,
             X509Chain chain,

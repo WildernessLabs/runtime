@@ -834,6 +834,11 @@ internal static partial class Interop
             return Ssl.SslGetPeerCertificate(context);
         }
 
+        internal static int GetPeerCertVerifyResult(SafeSslHandle context)
+        {
+            return Ssl.SslGetPeerCertVerifyResult(context);
+        }
+
         internal static SafeSharedX509StackHandle GetPeerCertificateChain(SafeSslHandle context)
         {
             return Ssl.SslGetPeerCertChain(context);
