@@ -31,13 +31,17 @@ set(CMAKE_OBJDUMP arm-none-eabi-objdump)
 # Architecture flags: Cortex-M7, Thumb2-only, hard float VFPv5-D16
 set(NUTTX_ARCH_FLAGS "-mthumb -mcpu=cortex-m7 -mfloat-abi=hard -mfpu=fpv5-d16")
 
-# Fix newlib's int32_t = 'long int' mismatch.
-# Newlib defines int32_t as 'long int' and uint32_t as 'long unsigned int',
-# but GCC's built-in __INT32_TYPE__ is 'long int' too. Mono code mixes 'int'
-# and 'int32_t' freely assuming they're the same type. On this platform both
-# are 32-bit but they are DIFFERENT C types, causing "conflicting types" errors.
-# Override the compiler builtins so int32_t/uint32_t become int/unsigned int.
-set(NUTTX_INT32_FIX "-D__INT32_TYPE__=int -D__UINT32_TYPE__=\"unsigned int\" -D__INT_LEAST32_TYPE__=int -D__UINT_LEAST32_TYPE__=\"unsigned int\"")
+# NOTE on int32_t / uint32_t:
+# Newlib's stdint.h would define int32_t as 'long int', which conflicts with
+# Mono code that mixes 'int' and 'int32_t' freely. We don't have to do
+# anything about it here, because NuttX provides its own <stdint.h>
+# (nuttx/include/stdint.h) that takes precedence over newlib's via the
+# include_directories() lines below, and NuttX defines int32_t as 'signed int'
+# on ARM (see nuttx/arch/arm/include/types.h: typedef signed int _int32_t).
+# So 'int' and 'int32_t' are the same type and Mono compiles cleanly.
+# Earlier versions of this file passed -D__INT32_TYPE__=int to override the
+# GCC builtin macro, which was redundant once NuttX includes were wired up
+# and produced "builtin macro redefined" warnings on every translation unit.
 
 # NuttX protected build: errno.h defines errno as get_errno() (rvalue-only),
 # which breaks Mono's "errno = X" assignments. We can't use __DIRECT_ERRNO_ACCESS
@@ -50,8 +54,8 @@ set(NUTTX_ERRNO_FIX "")
 # a force-included compat header rather than modifying NuttX headers.
 set(NUTTX_COMPAT_FIX "-DO_CLOEXEC=0 -include ${CMAKE_CURRENT_LIST_DIR}/../nuttx-compat.h")
 
-set(CMAKE_C_FLAGS_INIT "${NUTTX_ARCH_FLAGS} ${NUTTX_INT32_FIX} ${NUTTX_ERRNO_FIX} ${NUTTX_COMPAT_FIX} -O1")
-set(CMAKE_CXX_FLAGS_INIT "${NUTTX_ARCH_FLAGS} ${NUTTX_INT32_FIX} ${NUTTX_ERRNO_FIX} ${NUTTX_COMPAT_FIX} -O1")
+set(CMAKE_C_FLAGS_INIT "${NUTTX_ARCH_FLAGS} ${NUTTX_ERRNO_FIX} ${NUTTX_COMPAT_FIX} -O1")
+set(CMAKE_CXX_FLAGS_INIT "${NUTTX_ARCH_FLAGS} ${NUTTX_ERRNO_FIX} ${NUTTX_COMPAT_FIX} -O1")
 set(CMAKE_ASM_FLAGS_INIT "${NUTTX_ARCH_FLAGS}")
 
 # NuttX sysroot / include path
