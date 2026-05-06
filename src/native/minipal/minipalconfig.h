@@ -9,7 +9,7 @@
 #define HAVE_MINIPAL_MINIPALCONFIG_H
 
 #define HAVE_ARC4RANDOM_BUF          0
-#define HAVE_GETRANDOM               0  /* NuttX doesn't have getrandom syscall */
+#define HAVE_GETRANDOM               1
 #define HAVE_AUXV_HWCAP_H            0
 #define HAVE_HWPROBE_H               0
 #define HAVE_RESOURCE_H              1
