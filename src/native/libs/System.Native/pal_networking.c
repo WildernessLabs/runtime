@@ -1514,6 +1514,15 @@ static int32_t ConvertSocketFlagsPlatformToPal(int platformFlags)
 }
 #endif // CMSG_SPACE
 
+#ifdef __NuttX__
+/* Edge re-arm hook for the NuttX poll-event port: when a recv/send returns
+ * EAGAIN the managed engine has drained the socket and now wants the next
+ * readiness edge. The poll port can't observe that drain (it happens on a pool
+ * thread), so clear the cached "reported" bit and wake the event loop here.
+ * Defined with the poll port further below. */
+static void nxsock_rearm(int fd, short pollbits);
+#endif
+
 int32_t SystemNative_Receive(intptr_t socket, void* buffer, int32_t bufferLen, int32_t flags, int32_t* received)
 {
     if (buffer == NULL || bufferLen < 0 || received == NULL)
@@ -1539,6 +1548,10 @@ int32_t SystemNative_Receive(intptr_t socket, void* buffer, int32_t bufferLen, i
     }
 
     *received = 0;
+#ifdef __NuttX__
+    if (errno == EAGAIN || errno == EWOULDBLOCK)
+        nxsock_rearm(fd, POLLIN);
+#endif
     return SystemNative_ConvertErrorPlatformToPal(errno);
 }
 
@@ -1681,6 +1694,10 @@ int32_t SystemNative_Send(intptr_t socket, void* buffer, int32_t bufferLen, int3
     }
 
     *sent = 0;
+#ifdef __NuttX__
+    if (errno == EAGAIN || errno == EWOULDBLOCK)
+        nxsock_rearm(fd, POLLOUT);
+#endif
     return SystemNative_ConvertErrorPlatformToPal(errno);
 }
 
@@ -3459,8 +3476,9 @@ static const size_t SocketEventBufferElementSize = sizeof(SocketEvent);
 
 typedef struct {
     int      fd;
-    int32_t  events;   /* SocketEvents bitmask */
+    int32_t  events;   /* SocketEvents bitmask the engine registered */
     uintptr_t data;    /* opaque context index */
+    int32_t  reported; /* POLL* bits currently asserted AND already delivered (edge state) */
 } NxSockReg;
 
 static pthread_mutex_t s_nxsock_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -3501,6 +3519,54 @@ static void nxsock_wake(void)
     unused = write(s_nxsock_wake[1], &c, 1);
 }
 
+/* Drop any registered fd that is now invalid (closed). NuttX poll() fails the
+ * WHOLE call with -EBADF if ANY fd in the set is closed (fs_poll.c poll_setup:
+ * it does NOT set POLLNVAL per-fd). The managed SocketAsyncEngine relies on
+ * epoll semantics where close() implicitly removes the fd, so it NEVER calls
+ * unregister on close -> a closed-but-still-registered fd makes every poll()
+ * return EBADF. If that error reaches managed it tears down the entire engine
+ * and ALL async socket I/O hangs forever. So on EBADF we prune the dead fd(s)
+ * (probed individually) and retry instead of propagating the error. */
+static int nxsock_prune_invalid(void)
+{
+    int pruned = 0;
+    pthread_mutex_lock(&s_nxsock_lock);
+    for (int i = 0; i < s_nxsock_nregs; )
+    {
+        struct pollfd one;
+        one.fd = s_nxsock_regs[i].fd;
+        one.events = 0;
+        one.revents = 0;
+        if (poll(&one, 1, 0) < 0 && errno == EBADF)
+        {
+            s_nxsock_regs[i] = s_nxsock_regs[--s_nxsock_nregs];
+            pruned++;
+        }
+        else
+            i++;
+    }
+    pthread_mutex_unlock(&s_nxsock_lock);
+    return pruned;
+}
+
+/* Re-arm edge state for a socket after recv/send returned EAGAIN: clear the
+ * given poll bit from `reported` so the next rising edge is delivered, then wake
+ * the event loop (which may be blocked in Phase B with that bit masked out). */
+static void nxsock_rearm(int fd, short pollbits)
+{
+    pthread_mutex_lock(&s_nxsock_lock);
+    for (int i = 0; i < s_nxsock_nregs; i++)
+    {
+        if (s_nxsock_regs[i].fd == fd)
+        {
+            s_nxsock_regs[i].reported &= ~(int32_t)pollbits;
+            break;
+        }
+    }
+    pthread_mutex_unlock(&s_nxsock_lock);
+    nxsock_wake();
+}
+
 static int32_t TryChangeSocketEventRegistrationInner(
     int32_t port, int32_t socket, SocketEvents currentEvents, SocketEvents newEvents,
     uintptr_t data)
@@ -3518,8 +3584,9 @@ static int32_t TryChangeSocketEventRegistrationInner(
                 s_nxsock_regs[i] = s_nxsock_regs[--s_nxsock_nregs]; /* remove */
             else
             {
-                s_nxsock_regs[i].events = (int32_t)newEvents;
-                s_nxsock_regs[i].data   = data;
+                s_nxsock_regs[i].events   = (int32_t)newEvents;
+                s_nxsock_regs[i].data     = data;
+                s_nxsock_regs[i].reported = 0; /* re-arm: deliver a fresh edge after re-registration */
             }
             pthread_mutex_unlock(&s_nxsock_lock);
             nxsock_wake();
@@ -3535,9 +3602,10 @@ static int32_t TryChangeSocketEventRegistrationInner(
         if (!nr) { pthread_mutex_unlock(&s_nxsock_lock); return Error_ENOMEM; }
         s_nxsock_regs = nr; s_nxsock_cap = nc;
     }
-    s_nxsock_regs[s_nxsock_nregs].fd     = socket;
-    s_nxsock_regs[s_nxsock_nregs].events = (int32_t)newEvents;
-    s_nxsock_regs[s_nxsock_nregs].data   = data;
+    s_nxsock_regs[s_nxsock_nregs].fd       = socket;
+    s_nxsock_regs[s_nxsock_nregs].events   = (int32_t)newEvents;
+    s_nxsock_regs[s_nxsock_nregs].data     = data;
+    s_nxsock_regs[s_nxsock_nregs].reported = 0;
     s_nxsock_nregs++;
 
     pthread_mutex_unlock(&s_nxsock_lock);
@@ -3545,6 +3613,12 @@ static int32_t TryChangeSocketEventRegistrationInner(
     return Error_SUCCESS;
 }
 
+/* EDGE-EMULATION over NuttX level-triggered poll(). The managed SocketAsyncEngine
+ * registers each socket once for Read|Write and expects edge semantics; raw poll()
+ * is level-triggered so an always-writable socket re-asserts POLLOUT forever and
+ * the engine livelocks. Phase A samples (non-blocking) and emits only transitions;
+ * Phase B blocks only on not-yet-reported bits so a delivered, still-high bit can't
+ * spin. Drains (recv/send EAGAIN) re-arm via nxsock_rearm(). */
 static int32_t WaitForSocketEventsInner(int32_t port, SocketEvent* buffer, int32_t* count)
 {
     (void)port;
@@ -3568,80 +3642,118 @@ retry:;
         memcpy(snap, s_nxsock_regs, (size_t)nregs * sizeof(NxSockReg));
     pthread_mutex_unlock(&s_nxsock_lock);
 
-    /* Build pollfd array */
-    pfds[0].fd      = s_nxsock_wake[0];
-    pfds[0].events  = POLLIN;
-    pfds[0].revents = 0;
+    /* ---------- Phase A: non-blocking sample of all WANTED events ---------- */
+    pfds[0].fd = s_nxsock_wake[0]; pfds[0].events = POLLIN; pfds[0].revents = 0;
     for (int i = 0; i < nregs; i++)
     {
-        pfds[i + 1].fd     = snap[i].fd;
-        pfds[i + 1].events = 0;
-        if (snap[i].events & (SocketEvents_SA_READ | SocketEvents_SA_READCLOSE))
-            pfds[i + 1].events |= POLLIN;
-        if (snap[i].events & SocketEvents_SA_WRITE)
-            pfds[i + 1].events |= POLLOUT;
+        short want = 0;
+        if (snap[i].events & (SocketEvents_SA_READ | SocketEvents_SA_READCLOSE)) want |= POLLIN;
+        if (snap[i].events & SocketEvents_SA_WRITE)                              want |= POLLOUT;
+        pfds[i + 1].fd      = snap[i].fd;
+        pfds[i + 1].events  = want;
         pfds[i + 1].revents = 0;
     }
 
-    int ret = poll(pfds, (nfds_t)nfds, -1);
-    if (ret <= 0)
+    int ret = poll(pfds, (nfds_t)nfds, 0 /* non-blocking */);
+    if (ret < 0)
     {
+        int e = errno;
         free(pfds); free(snap);
-        goto retry;  /* EINTR or spurious */
+        if (e == EINTR) goto retry;
+        if (e == EBADF && nxsock_prune_invalid() > 0) goto retry;
+        return SystemNative_ConvertErrorPlatformToPal(e);
     }
 
-    /* Drain wakeup pipe */
     if (pfds[0].revents & POLLIN)
     {
         char drain[64];
         while (read(s_nxsock_wake[0], drain, sizeof(drain)) > 0) { }
     }
 
-    /* Convert poll results to SocketEvents */
     int n = 0;
+    pthread_mutex_lock(&s_nxsock_lock);
     for (int i = 0; i < nregs && n < maxEvents; i++)
     {
         short rev = pfds[i + 1].revents;
-        if (rev == 0)
-            continue;
 
-        /* POLLNVAL means the fd was closed (likely by another thread during
-         * HttpConnection disposal).  Silently remove the stale registration
-         * rather than dispatching SA_ERROR to potentially-freed managed state. */
+        int live = -1;
+        for (int j = 0; j < s_nxsock_nregs; j++)
+            if (s_nxsock_regs[j].fd == snap[i].fd) { live = j; break; }
+        if (live < 0)
+            continue;  /* deregistered concurrently */
+
         if (rev & POLLNVAL)
         {
-            pthread_mutex_lock(&s_nxsock_lock);
-            for (int j = 0; j < s_nxsock_nregs; j++)
-            {
-                if (s_nxsock_regs[j].fd == snap[i].fd)
-                {
-                    s_nxsock_regs[j] = s_nxsock_regs[--s_nxsock_nregs];
-                    break;
-                }
-            }
-            pthread_mutex_unlock(&s_nxsock_lock);
-            continue;  /* Don't dispatch to managed code */
+            s_nxsock_regs[live] = s_nxsock_regs[--s_nxsock_nregs];  /* stale fd, drop */
+            continue;
         }
 
-        SocketEvents ev = SocketEvents_SA_NONE;
-        if (rev & POLLIN)               ev |= SocketEvents_SA_READ;
-        if (rev & POLLOUT)              ev |= SocketEvents_SA_WRITE;
-        if (rev & POLLHUP)              ev |= SocketEvents_SA_CLOSE;
-        if (rev & POLLERR)              ev |= SocketEvents_SA_ERROR;
+        int32_t now   = (int32_t)(rev & (POLLIN | POLLOUT | POLLHUP | POLLERR));
+        int32_t newly = now & ~s_nxsock_regs[live].reported;
+        s_nxsock_regs[live].reported = now;  /* dropped bits re-arm for next rise */
+        snap[i].reported = now;              /* keep snap in sync for Phase B */
 
-        buffer[n].Data   = snap[i].data;
-        buffer[n].Events = (int32_t)ev;
+        if (newly == 0)
+            continue;
+
+        SocketEvents ev = SocketEvents_SA_NONE;
+        if (newly & POLLIN)  ev |= SocketEvents_SA_READ;
+        if (newly & POLLOUT) ev |= SocketEvents_SA_WRITE;
+        if (newly & POLLHUP) ev |= SocketEvents_SA_CLOSE;
+        if (newly & POLLERR) ev |= SocketEvents_SA_ERROR;
+
+        buffer[n].Data    = snap[i].data;
+        buffer[n].Events  = (int32_t)ev;
         buffer[n].Padding = 0;
         n++;
     }
+    pthread_mutex_unlock(&s_nxsock_lock);
+
+    if (n > 0)
+    {
+        free(pfds); free(snap);
+        *count = n;
+        return Error_SUCCESS;
+    }
+
+    /* ---------- Phase B: block until a NOT-yet-reported event rises ---------- */
+    pfds[0].fd = s_nxsock_wake[0]; pfds[0].events = POLLIN; pfds[0].revents = 0;
+    for (int i = 0; i < nregs; i++)
+    {
+        short want = 0;
+        if (snap[i].events & (SocketEvents_SA_READ | SocketEvents_SA_READCLOSE)) want |= POLLIN;
+        if (snap[i].events & SocketEvents_SA_WRITE)                              want |= POLLOUT;
+        want &= (short)~(snap[i].reported);   /* drop already-delivered, still-high bits */
+        pfds[i + 1].fd      = snap[i].fd;
+        pfds[i + 1].events  = want;
+        pfds[i + 1].revents = 0;
+    }
+
+    /* Wait for a not-yet-reported event, the wake pipe (registration / recv-send
+     * EAGAIN re-arm), OR a 100ms timeout. The TIMEOUT IS REQUIRED, not cosmetic:
+     * the mono GC stops the world cooperatively, and a thread parked in an
+     * indefinite poll(-1) syscall never reaches a managed safepoint, so STW (hence
+     * GC.Collect and every allocation-triggered GC) HANGS the whole runtime. The
+     * 100ms wake lets this event-loop thread return to managed and hit a safepoint.
+     * On timeout we just re-sample (Phase A); we do NOT clear `reported` here (that
+     * re-delivered still-high POLLIN every tick = a busy spin), since a real drain
+     * always re-arms via nxsock_rearm(). EBADF -> prune the closed fd, not fatal. */
+    int bret = poll(pfds, (nfds_t)nfds, 100 /* ms: GC-safepoint heartbeat */);
+    if (bret < 0 && errno != EINTR)
+    {
+        int e = errno;
+        free(pfds); free(snap);
+        if (e == EBADF && nxsock_prune_invalid() > 0) goto retry;
+        return SystemNative_ConvertErrorPlatformToPal(e);
+    }
+    if (bret > 0 && (pfds[0].revents & POLLIN))
+    {
+        char drain[64];
+        while (read(s_nxsock_wake[0], drain, sizeof(drain)) > 0) { }
+    }
 
     free(pfds); free(snap);
-
-    if (n == 0)
-        goto retry;  /* Only wakeup pipe fired, no real events */
-
-    *count = n;
-    return Error_SUCCESS;
+    goto retry;  /* recompute transitions in Phase A */
 }
 
 #else /* !HAVE_KQUEUE !HAVE_EPOLL !__NuttX__ */

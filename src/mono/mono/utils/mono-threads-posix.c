@@ -81,6 +81,19 @@ mono_thread_platform_create_thread (MonoThreadStart thread_fn, gpointer thread_d
 		}
 	}
 
+#ifdef HOST_NUTTX
+	/* MEMORY-SAVING: cap mono-INTERNAL thread stacks (GC/finalizer/sgen workers/
+	 * etc.) at 64KB on NuttX, mirroring the .NET-thread cap in
+	 * pal_threading.c:SystemNative_CreateThread. Without this they take
+	 * MONO_DEFAULT_STACKSIZE (256KB) — ~1MB across the worker set (measured: 5
+	 * threads @256KB) — which on the tight ~29MB SDRAM tips the cloud-auth
+	 * TLS+HTTP working set past the pool ceiling and OOMs. 64KB is validated safe
+	 * (project_stack64k_footprint: clean boot/auth/MQTT). The main Mono task keeps
+	 * its large stack (set separately, for deep JIT recursion). */
+	if (set_stack_size > 65536)
+		set_stack_size = 65536;
+#endif
+
 #ifdef PTHREAD_STACK_MIN
 	if (set_stack_size < PTHREAD_STACK_MIN)
 		set_stack_size = PTHREAD_STACK_MIN;
