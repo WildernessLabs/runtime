@@ -700,6 +700,19 @@ namespace System.Net.Sockets
                 return true;
             }
 
+            // On NuttX the native TCP stack can return EISCONN when an async connect
+            // already completed underneath us (the connect callback fired against this
+            // fd from another thread). A live, connected fd is a successful connect --
+            // not a fatal error. Returning IsConnected here would surface a
+            // SocketException and break reconnect/re-auth. The genuinely
+            // disconnected/reused-handle case is already handled by socket.IsDisconnected
+            // above, so a bare EISCONN from a live handle means "already connected".
+            if (err == Interop.Error.EISCONN)
+            {
+                errorCode = SocketError.Success;
+                return true;
+            }
+
             if (err != Interop.Error.EINPROGRESS)
             {
                 errorCode = GetSocketErrorForErrorCode(err);

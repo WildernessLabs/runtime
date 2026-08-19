@@ -3613,6 +3613,32 @@ static int32_t TryChangeSocketEventRegistrationInner(
     return Error_SUCCESS;
 }
 
+/* Transient poll() errors must NEVER crash the SocketAsyncEngine event loop: the
+ * managed side (SocketAsyncEngine.Unix.cs) FailFasts on ANY error returned from
+ * WaitForSocketEvents. On NuttX, poll() surfaces EBUSY -- propagated from
+ * tcp_pollsetup when the shared devif callback pool (g_cbprealloc) is momentarily
+ * exhausted -- and EAGAIN/EWOULDBLOCK/ENOMEM under load. All are transient; absorb
+ * them with a short back-off + re-sample instead of returning (which terminates the
+ * whole runtime). The device watchdog remains the ultimate backstop. */
+static int nxsock_poll_transient(int e)
+{
+    return e == EBUSY || e == EAGAIN || e == EWOULDBLOCK || e == ENOMEM;
+}
+
+static void nxsock_poll_backoff(int e)
+{
+    static volatile uint32_t s_nxsock_transient = 0;
+    uint32_t c = ++s_nxsock_transient;
+    /* Rate-limited so a persistent stall stays visible in `meadow listen` without
+     * flooding: first few, then every 1024th. */
+    if (c <= 4u || (c & 0x3ffu) == 0u)
+    {
+        printf("NXPOLLDIAG transient poll errno=%d absorbed (count=%u)\n", e, (unsigned)c);
+        fflush(stdout);
+    }
+    usleep(20 * 1000);  /* 20ms: let other sockets close and free callback slots */
+}
+
 /* EDGE-EMULATION over NuttX level-triggered poll(). The managed SocketAsyncEngine
  * registers each socket once for Read|Write and expects edge semantics; raw poll()
  * is level-triggered so an always-writable socket re-asserts POLLOUT forever and
@@ -3661,6 +3687,7 @@ retry:;
         free(pfds); free(snap);
         if (e == EINTR) goto retry;
         if (e == EBADF && nxsock_prune_invalid() > 0) goto retry;
+        if (nxsock_poll_transient(e)) { nxsock_poll_backoff(e); goto retry; }
         return SystemNative_ConvertErrorPlatformToPal(e);
     }
 
@@ -3744,6 +3771,7 @@ retry:;
         int e = errno;
         free(pfds); free(snap);
         if (e == EBADF && nxsock_prune_invalid() > 0) goto retry;
+        if (nxsock_poll_transient(e)) { nxsock_poll_backoff(e); goto retry; }
         return SystemNative_ConvertErrorPlatformToPal(e);
     }
     if (bret > 0 && (pfds[0].revents & POLLIN))
