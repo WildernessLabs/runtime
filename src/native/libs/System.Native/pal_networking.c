@@ -3486,15 +3486,28 @@ static NxSockReg      *s_nxsock_regs;
 static int             s_nxsock_nregs;
 static int             s_nxsock_cap;
 static int             s_nxsock_wake[2] = { -1, -1 };
+/* Persistent poll scratch buffers, grown on demand and reused across every
+ * WaitForSocketEventsInner call (single event-loop thread). Replaces a malloc+
+ * free of both on EVERY 100ms GC-heartbeat wait -- perpetual heap churn that
+ * fragments the first-fit NuttX heap and, on malloc failure, returned ENOMEM ->
+ * managed FailFast. Freed in CloseSocketEventPortInner. */
+static struct pollfd  *s_nxsock_pfds;
+static int             s_nxsock_pfds_cap;
+static NxSockReg      *s_nxsock_snap;
+static int             s_nxsock_snap_cap;
 
 static int32_t CreateSocketEventPortInner(int32_t* port)
 {
     if (pipe(s_nxsock_wake) != 0)
         return SystemNative_ConvertErrorPlatformToPal(errno);
 
-    /* Make the read side non-blocking so drain never stalls */
+    /* Make the read side non-blocking so drain never stalls, AND the write side
+     * non-blocking so nxsock_wake() from a pool thread can never block on a full
+     * pipe (a single pending byte already signals the loop). */
     fcntl(s_nxsock_wake[0], F_SETFL,
           fcntl(s_nxsock_wake[0], F_GETFL) | O_NONBLOCK);
+    fcntl(s_nxsock_wake[1], F_SETFL,
+          fcntl(s_nxsock_wake[1], F_GETFL) | O_NONBLOCK);
 
     *port = s_nxsock_wake[0];
     return Error_SUCCESS;
@@ -3504,11 +3517,18 @@ static int32_t CloseSocketEventPortInner(int32_t port)
 {
     (void)port;
     pthread_mutex_lock(&s_nxsock_lock);
-    if (s_nxsock_wake[0] >= 0) { close(s_nxsock_wake[0]); s_nxsock_wake[0] = -1; }
-    if (s_nxsock_wake[1] >= 0) { close(s_nxsock_wake[1]); s_nxsock_wake[1] = -1; }
+    int w0 = s_nxsock_wake[0]; int w1 = s_nxsock_wake[1];
+    s_nxsock_wake[0] = -1; s_nxsock_wake[1] = -1;
     free(s_nxsock_regs); s_nxsock_regs = NULL;
     s_nxsock_nregs = 0; s_nxsock_cap = 0;
+    free(s_nxsock_pfds); s_nxsock_pfds = NULL; s_nxsock_pfds_cap = 0;
+    free(s_nxsock_snap); s_nxsock_snap = NULL; s_nxsock_snap_cap = 0;
     pthread_mutex_unlock(&s_nxsock_lock);
+    /* Close the wake pipe OUTSIDE the lock: close() is --wrap'd to
+     * nxsock_close_notify() which also takes s_nxsock_lock -- closing here under
+     * the lock would self-deadlock. */
+    if (w0 >= 0) close(w0);
+    if (w1 >= 0) close(w1);
     return Error_SUCCESS;
 }
 
@@ -3547,6 +3567,34 @@ static int nxsock_prune_invalid(void)
     }
     pthread_mutex_unlock(&s_nxsock_lock);
     return pruned;
+}
+
+/* Deregister a socket from the poll set at close() time. THE structural fix for
+ * the EBADF storm: the managed SocketAsyncEngine registers each fd once and, like
+ * epoll, assumes close() implicitly removes it -- but this poll() emulation has no
+ * such auto-removal, so without this every closed socket lingers in s_nxsock_regs
+ * and NuttX poll() then fails the ENTIRE set with EBADF (it aborts, it does not
+ * flag POLLNVAL per-fd). Called from the firmware's __wrap_close BEFORE the real
+ * close(), while the fd is still valid. Safe for any fd: non-socket / unregistered
+ * fds simply aren't found. nxsock_prune_invalid remains only as a backstop for the
+ * tiny close-vs-in-flight-poll race. */
+void nxsock_close_notify(int fd)
+{
+    if (fd < 0) return;
+    int removed = 0;
+    pthread_mutex_lock(&s_nxsock_lock);
+    for (int i = 0; i < s_nxsock_nregs; i++)
+    {
+        if (s_nxsock_regs[i].fd == fd)
+        {
+            s_nxsock_regs[i] = s_nxsock_regs[--s_nxsock_nregs];
+            removed = 1;
+            break;
+        }
+    }
+    pthread_mutex_unlock(&s_nxsock_lock);
+    if (removed)
+        nxsock_wake();  /* event loop re-snapshots without the closing fd */
 }
 
 /* Re-arm edge state for a socket after recv/send returned EAGAIN: clear the
@@ -3651,19 +3699,28 @@ static int32_t WaitForSocketEventsInner(int32_t port, SocketEvent* buffer, int32
     int maxEvents = *count;
 
 retry:;
-    /* Snapshot registered sockets under lock */
+    /* Snapshot registered sockets under lock, into persistent grow-only buffers
+     * (reused across calls -- see s_nxsock_pfds/snap). No per-wait malloc/free. */
     pthread_mutex_lock(&s_nxsock_lock);
     int nregs = s_nxsock_nregs;
     int nfds  = nregs + 1;   /* +1 for wakeup pipe */
 
-    struct pollfd *pfds = (struct pollfd *)malloc((size_t)nfds * sizeof(struct pollfd));
-    NxSockReg     *snap = nregs ? (NxSockReg *)malloc((size_t)nregs * sizeof(NxSockReg)) : NULL;
-    if (!pfds || (nregs && !snap))
+    if (nfds > s_nxsock_pfds_cap)
     {
-        free(pfds); free(snap);
-        pthread_mutex_unlock(&s_nxsock_lock);
-        return Error_ENOMEM;
+        int nc = nfds + 8;
+        struct pollfd *p = (struct pollfd *)realloc(s_nxsock_pfds, (size_t)nc * sizeof(struct pollfd));
+        if (!p) { pthread_mutex_unlock(&s_nxsock_lock); nxsock_poll_backoff(ENOMEM); goto retry; }
+        s_nxsock_pfds = p; s_nxsock_pfds_cap = nc;
     }
+    if (nregs > s_nxsock_snap_cap)
+    {
+        int nc = nregs + 8;
+        NxSockReg *s = (NxSockReg *)realloc(s_nxsock_snap, (size_t)nc * sizeof(NxSockReg));
+        if (!s) { pthread_mutex_unlock(&s_nxsock_lock); nxsock_poll_backoff(ENOMEM); goto retry; }
+        s_nxsock_snap = s; s_nxsock_snap_cap = nc;
+    }
+    struct pollfd *pfds = s_nxsock_pfds;
+    NxSockReg     *snap = s_nxsock_snap;
     if (nregs)
         memcpy(snap, s_nxsock_regs, (size_t)nregs * sizeof(NxSockReg));
     pthread_mutex_unlock(&s_nxsock_lock);
@@ -3684,7 +3741,6 @@ retry:;
     if (ret < 0)
     {
         int e = errno;
-        free(pfds); free(snap);
         if (e == EINTR) goto retry;
         if (e == EBADF) { (void)nxsock_prune_invalid(); nxsock_poll_backoff(e); goto retry; }
         if (nxsock_poll_transient(e)) { nxsock_poll_backoff(e); goto retry; }
@@ -3726,8 +3782,12 @@ retry:;
         SocketEvents ev = SocketEvents_SA_NONE;
         if (newly & POLLIN)  ev |= SocketEvents_SA_READ;
         if (newly & POLLOUT) ev |= SocketEvents_SA_WRITE;
-        if (newly & POLLHUP) ev |= SocketEvents_SA_CLOSE;
-        if (newly & POLLERR) ev |= SocketEvents_SA_ERROR;
+        /* Mirror the epoll reference path (ConvertEventEPollToSocketAsync converts
+         * EPOLLHUP into EPOLLIN|EPOLLOUT): on hangup/error also drive READ+WRITE so
+         * a pending Receive/Send is completed and observes the EOF/error. Delivering
+         * only SA_CLOSE/SA_ERROR can leave a blocked recv/send hung forever. */
+        if (newly & POLLHUP) ev |= SocketEvents_SA_CLOSE | SocketEvents_SA_READ | SocketEvents_SA_WRITE;
+        if (newly & POLLERR) ev |= SocketEvents_SA_ERROR | SocketEvents_SA_READ | SocketEvents_SA_WRITE;
 
         buffer[n].Data    = snap[i].data;
         buffer[n].Events  = (int32_t)ev;
@@ -3738,7 +3798,6 @@ retry:;
 
     if (n > 0)
     {
-        free(pfds); free(snap);
         *count = n;
         return Error_SUCCESS;
     }
@@ -3769,7 +3828,6 @@ retry:;
     if (bret < 0 && errno != EINTR)
     {
         int e = errno;
-        free(pfds); free(snap);
         if (e == EBADF) { (void)nxsock_prune_invalid(); nxsock_poll_backoff(e); goto retry; }
         if (nxsock_poll_transient(e)) { nxsock_poll_backoff(e); goto retry; }
         return SystemNative_ConvertErrorPlatformToPal(e);
@@ -3780,7 +3838,6 @@ retry:;
         while (read(s_nxsock_wake[0], drain, sizeof(drain)) > 0) { }
     }
 
-    free(pfds); free(snap);
     goto retry;  /* recompute transitions in Phase A */
 }
 
