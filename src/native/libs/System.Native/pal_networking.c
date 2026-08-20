@@ -3686,7 +3686,7 @@ retry:;
         int e = errno;
         free(pfds); free(snap);
         if (e == EINTR) goto retry;
-        if (e == EBADF && nxsock_prune_invalid() > 0) goto retry;
+        if (e == EBADF) { (void)nxsock_prune_invalid(); nxsock_poll_backoff(e); goto retry; }
         if (nxsock_poll_transient(e)) { nxsock_poll_backoff(e); goto retry; }
         return SystemNative_ConvertErrorPlatformToPal(e);
     }
@@ -3770,7 +3770,7 @@ retry:;
     {
         int e = errno;
         free(pfds); free(snap);
-        if (e == EBADF && nxsock_prune_invalid() > 0) goto retry;
+        if (e == EBADF) { (void)nxsock_prune_invalid(); nxsock_poll_backoff(e); goto retry; }
         if (nxsock_poll_transient(e)) { nxsock_poll_backoff(e); goto retry; }
         return SystemNative_ConvertErrorPlatformToPal(e);
     }
