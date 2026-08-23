@@ -1523,6 +1523,24 @@ static int32_t ConvertSocketFlagsPlatformToPal(int platformFlags)
 static void nxsock_rearm(int fd, short pollbits);
 #endif
 
+#ifdef __NuttX__
+/* Probe the actual errno behind a failed socket read/write. This is what becomes
+ * .NET's unmapped "Unknown socket error" (net_io_read/writefailure) when the errno
+ * has no SocketError mapping. EAGAIN/EWOULDBLOCK/EINTR are normal non-blocking flow
+ * and are skipped. Rate-limited so a hot retry loop can't flood `meadow listen`. */
+static void nxsock_io_errno_diag(const char *op, int fd, int e)
+{
+    if (e == EAGAIN || e == EWOULDBLOCK || e == EINTR) return;
+    static volatile uint32_t s_io_diag = 0;
+    uint32_t c = ++s_io_diag;
+    if (c <= 24u || (c & 0x3fu) == 0u)
+    {
+        printf("IODIAG %s fd=%d errno=%d (count=%u)\n", op, fd, e, (unsigned)c);
+        fflush(stdout);
+    }
+}
+#endif
+
 int32_t SystemNative_Receive(intptr_t socket, void* buffer, int32_t bufferLen, int32_t flags, int32_t* received)
 {
     if (buffer == NULL || bufferLen < 0 || received == NULL)
@@ -1551,6 +1569,8 @@ int32_t SystemNative_Receive(intptr_t socket, void* buffer, int32_t bufferLen, i
 #ifdef __NuttX__
     if (errno == EAGAIN || errno == EWOULDBLOCK)
         nxsock_rearm(fd, POLLIN);
+    else
+        nxsock_io_errno_diag("recv", fd, errno);
 #endif
     return SystemNative_ConvertErrorPlatformToPal(errno);
 }
@@ -1659,6 +1679,9 @@ int32_t SystemNative_ReceiveMessage(intptr_t socket, MessageHeader* messageHeade
     }
 
     *received = 0;
+#ifdef __NuttX__
+    nxsock_io_errno_diag("recvmsg", fd, errno);
+#endif
     return SystemNative_ConvertErrorPlatformToPal(errno);
 }
 
@@ -1697,6 +1720,8 @@ int32_t SystemNative_Send(intptr_t socket, void* buffer, int32_t bufferLen, int3
 #ifdef __NuttX__
     if (errno == EAGAIN || errno == EWOULDBLOCK)
         nxsock_rearm(fd, POLLOUT);
+    else
+        nxsock_io_errno_diag("send", fd, errno);
 #endif
     return SystemNative_ConvertErrorPlatformToPal(errno);
 }
@@ -1744,6 +1769,9 @@ int32_t SystemNative_SendMessage(intptr_t socket, MessageHeader* messageHeader, 
     }
 
     *sent = 0;
+#ifdef __NuttX__
+    nxsock_io_errno_diag("sendmsg", fd, errno);
+#endif
     return SystemNative_ConvertErrorPlatformToPal(errno);
 }
 
