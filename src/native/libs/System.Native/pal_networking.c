@@ -1680,7 +1680,17 @@ int32_t SystemNative_ReceiveMessage(intptr_t socket, MessageHeader* messageHeade
 
     *received = 0;
 #ifdef __NuttX__
-    nxsock_io_errno_diag("recvmsg", fd, errno);
+    /* CRITICAL: re-arm the edge state on EAGAIN exactly like SystemNative_Receive.
+     * Without this, the cached `reported` POLLIN bit stays set after a drain-to-
+     * EAGAIN, so WaitForSocketEventsInner computes newly==0 for the next readable
+     * edge and NEVER delivers it -> the pending read stalls forever. This path
+     * (recvmsg/recvfrom) is used by synchronous Socket.Receive (MQTTnet), buffer-
+     * list receives, ReceiveFrom and DNS -- hence the intermittent MQTT "stuck
+     * Connecting" and DNS stalls, while plain async recv (which rearms) was fine. */
+    if (errno == EAGAIN || errno == EWOULDBLOCK)
+        nxsock_rearm(fd, POLLIN);
+    else
+        nxsock_io_errno_diag("recvmsg", fd, errno);
 #endif
     return SystemNative_ConvertErrorPlatformToPal(errno);
 }
@@ -1770,7 +1780,14 @@ int32_t SystemNative_SendMessage(intptr_t socket, MessageHeader* messageHeader, 
 
     *sent = 0;
 #ifdef __NuttX__
-    nxsock_io_errno_diag("sendmsg", fd, errno);
+    /* POLLOUT twin of the ReceiveMessage rearm: without this a buffer-list /
+     * address-bearing send that drains to EAGAIN (send buffer full) never sees the
+     * writable-again edge -> a large handshake flight (e.g. client Certificate)
+     * wedges at "Connecting". Mirror SystemNative_Send. */
+    if (errno == EAGAIN || errno == EWOULDBLOCK)
+        nxsock_rearm(fd, POLLOUT);
+    else
+        nxsock_io_errno_diag("sendmsg", fd, errno);
 #endif
     return SystemNative_ConvertErrorPlatformToPal(errno);
 }
