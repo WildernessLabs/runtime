@@ -67,7 +67,7 @@ mono_arch_patch_callsite (guint8 *method_start, guint8 *code_ptr, guint8 *addr)
 			guint16 ldr_hw2 = *(guint16 *)(ldr + 2);
 			guint32 imm12 = ldr_hw2 & 0xFFF;
 			guint8 *pc = (guint8 *)(((gsize)ldr & ~(gsize)3) + 4);
-			guint32 *literal = (guint32 *)(pc + imm12);
+			arminstr_t *literal = (arminstr_t *)(pc + imm12);
 			*literal = (guint32)(gsize)addr;
 			mono_arch_flush_icache ((guint8 *)literal, 4);
 		}
@@ -76,7 +76,7 @@ mono_arch_patch_callsite (guint8 *method_start, guint8 *code_ptr, guint8 *addr)
 
 	g_assert_not_reached ();
 #else
-	guint32 *code = (guint32*)code_ptr;
+	arminstr_t *code = (arminstr_t *)code_ptr;
 
 	/* This is the 'bl' or the 'mov pc' instruction */
 	--code;
@@ -108,9 +108,9 @@ mono_arch_patch_plt_entry (guint8 *code, gpointer *got, host_mgreg_t *regs, guin
 	guint8 *jump_entry;
 
 	/* Patch the jump table entry used by the plt entry */
-	if (*(guint32*)code == 0xe59fc000) {
+	if (*(arminstr_t *)code == 0xe59fc000) {
 		/* ARM_LDR_IMM (code, ARMREG_IP, ARMREG_PC, 0); */
-		guint32 offset = ((guint32*)code)[2];
+		guint32 offset = ((arminstr_t *)code)[2];
 
 		jump_entry = code + offset + 12;
 	} else if (*(guint16*)(code - 4) == 0xf8df) {
@@ -121,7 +121,7 @@ mono_arch_patch_plt_entry (guint8 *code, gpointer *got, host_mgreg_t *regs, guin
 		guint32 offset;
 
 		code -= 4;
-		offset = *(guint32*)(code + 12);
+		offset = *(arminstr_t *)(code + 12);
 		jump_entry = code + offset + 8;
 	} else {
 		g_assert_not_reached ();
@@ -487,7 +487,7 @@ gpointer
 mono_arch_create_specific_trampoline (gpointer arg1, MonoTrampolineType tramp_type, MonoMemoryManager *mem_manager, guint32 *code_len)
 {
 	guint8 *code, *buf, *tramp;
-	guint32 *constants;
+	arminstr_t *constants;
 	guint32 short_branch = FALSE;
 	guint32 size = SPEC_TRAMP_SIZE;
 
@@ -520,10 +520,10 @@ mono_arch_create_specific_trampoline (gpointer arg1, MonoTrampolineType tramp_ty
 	ARM_PUSH (code, 0x5fff);
 	if (short_branch) {
 #ifdef __thumb2__
-		constants = (guint32*)code;
+		constants = (arminstr_t *)code;
 		constants [0] = short_branch;
 #else
-		constants = (guint32*)code;
+		constants = (arminstr_t *)code;
 		constants [0] = short_branch | (1 << 24);
 #endif
 		constants [1] = GPOINTER_TO_UINT (arg1);
@@ -574,7 +574,7 @@ mono_arch_get_unbox_trampoline (MonoMethod *m, gpointer addr)
 	ARM_LDR_IMM (code, ARMREG_IP, ARMREG_PC, 4);
 	ARM_ADD_REG_IMM8 (code, ARMREG_R0, ARMREG_R0, MONO_ABI_SIZEOF (MonoObject));
 	code = emit_bx (code, ARMREG_IP);
-	*(guint32*)code = (guint32)(gsize)addr;
+	*(arminstr_t *)code = (guint32)(gsize)addr;
 	code += 4;
 #endif
 	mono_arch_flush_icache (start, GPTRDIFF_TO_INT (code - start));
@@ -602,9 +602,9 @@ mono_arch_get_static_rgctx_trampoline (MonoMemoryManager *mem_manager, gpointer 
 #else
 	ARM_LDR_IMM (code, MONO_ARCH_RGCTX_REG, ARMREG_PC, 0);
 	ARM_LDR_IMM (code, ARMREG_PC, ARMREG_PC, 0);
-	*(guint32*)code = (guint32)(gsize)arg;
+	*(arminstr_t *)code = (guint32)(gsize)arg;
 	code += 4;
-	*(guint32*)code = (guint32)(gsize)addr;
+	*(arminstr_t *)code = (guint32)(gsize)addr;
 	code += 4;
 #endif
 
@@ -635,9 +635,9 @@ mono_arch_get_ftnptr_arg_trampoline (MonoMemoryManager *mem_manager, gpointer ar
 #else
 	ARM_LDR_IMM (code, ARMREG_IP, ARMREG_PC, 0);
 	ARM_LDR_IMM (code, ARMREG_PC, ARMREG_PC, 0);
-	*(guint32*)code = (guint32)(gsize)arg;
+	*(arminstr_t *)code = (guint32)(gsize)arg;
 	code += 4;
-	*(guint32*)code = (guint32)(gsize)addr;
+	*(arminstr_t *)code = (guint32)(gsize)addr;
 	code += 4;
 #endif
 
@@ -1129,7 +1129,7 @@ mono_arch_get_native_to_interp_trampoline (MonoTrampInfo **info)
 guint8*
 mono_arch_get_call_target (guint8 *code)
 {
-	guint32 ins = ((guint32*)code) [-1];
+	guint32 ins = ((arminstr_t *)code) [-1];
 
 	/* Should be a 'bl' or a 'b' */
 	if (((ins >> 25) & 0x7) == 0x5) {
@@ -1146,7 +1146,7 @@ guint32
 mono_arch_get_plt_info_offset (guint8 *plt_entry, host_mgreg_t *regs, guint8 *code)
 {
 	/* The offset is stored as the 4th word of the plt entry */
-	return ((guint32*)plt_entry) [3];
+	return ((arminstr_t *)plt_entry) [3];
 }
 
 /*
