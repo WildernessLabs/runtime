@@ -88,6 +88,11 @@ static inline size_t minipal_get_current_thread_id(void)
 #if defined(__wasm) && !defined(_REENTRANT)
     return minipal_get_current_thread_id_no_cache();
 
+#elif defined(__NuttX__)
+    // NuttX user space has no thread-local storage support (__aeabi_read_tp is
+    // only provided in the kernel), so do not cache the ID.
+    return minipal_get_current_thread_id_no_cache();
+
 #else // !__wasm || _REENTRANT
 #if defined(__GNUC__) && !defined(__clang__) && defined(__cplusplus)
     // gcc doesn't like _Thread_local when __cplusplus is defined.

@@ -14,6 +14,7 @@
 #include <errno.h>
 #ifdef __NuttX__
 #include "pal_io_nuttx.h"
+#include "pal_networking.h"   // nxsock_close_notify
 #else
 #include <fnmatch.h>
 #endif
@@ -394,6 +395,10 @@ int32_t SystemNative_Close(intptr_t fd)
     // do it here. Harmless for non-socket fds (ENOTSOCK) and already-shutdown
     // sockets (ENOTCONN).
     shutdown(rawFd, SHUT_RDWR);
+
+    // Remove the fd from the SocketAsyncEngine poll() emulation before it is
+    // closed (see nxsock_close_notify in pal_networking.c).  Safe for any fd.
+    nxsock_close_notify(rawFd);
 #endif
 
     int result = close(rawFd);
