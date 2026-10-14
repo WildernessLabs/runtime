@@ -32,30 +32,23 @@ set(CMAKE_OBJDUMP arm-none-eabi-objdump)
 set(NUTTX_ARCH_FLAGS "-mthumb -mcpu=cortex-m7 -mfloat-abi=hard -mfpu=fpv5-d16")
 
 # NOTE on int32_t / uint32_t:
-# Newlib's stdint.h would define int32_t as 'long int', which conflicts with
-# Mono code that mixes 'int' and 'int32_t' freely. We don't have to do
-# anything about it here, because NuttX provides its own <stdint.h>
-# (nuttx/include/stdint.h) that takes precedence over newlib's via the
-# include_directories() lines below, and NuttX defines int32_t as 'signed int'
-# on ARM (see nuttx/arch/arm/include/types.h: typedef signed int _int32_t).
-# So 'int' and 'int32_t' are the same type and Mono compiles cleanly.
-# Earlier versions of this file passed -D__INT32_TYPE__=int to override the
-# GCC builtin macro, which was redundant once NuttX includes were wired up
-# and produced "builtin macro redefined" warnings on every translation unit.
+# NuttX 12 (nuttx/arch/arm/include/types.h) takes _int32_t from the compiler's
+# __INT32_TYPE__, which is 'long int' for arm-none-eabi GCC.  Mono code that
+# mixes 'int *' and 'int32_t *' therefore gets -Wincompatible-pointer-types,
+# which GCC 14 and later treat as an error; CMakeLists.txt downgrades that one
+# diagnostic to a warning for HOST_NUTTX.  The two types have the same size and
+# alignment on ARM.  Declaration/definition mismatches ('conflicting types')
+# are fixed in the source instead.
 
-# NuttX protected build: errno.h defines errno as get_errno() (rvalue-only),
-# which breaks Mono's "errno = X" assignments. We can't use __DIRECT_ERRNO_ACCESS
-# because CONFIG_BUILD_PROTECTED #undefs it. Instead, we use a wrapper errno.h
-# that #include_next's the real one and then redefines errno as (*__errno()).
-# The override directory is added via include_directories (BEFORE) below.
-set(NUTTX_ERRNO_FIX "")
+# NuttX 12 defines errno as (*__errno()), a per-thread lvalue, and supports
+# O_CLOEXEC, so the old errno.h override and -DO_CLOEXEC=0 are no longer used.
 
-# Legacy NuttX headers lack some POSIX declarations. Provide them via
-# a force-included compat header rather than modifying NuttX headers.
-set(NUTTX_COMPAT_FIX "-DO_CLOEXEC=0 -include ${CMAKE_CURRENT_LIST_DIR}/../nuttx-compat.h")
+# Definitions the NuttX headers still lack are provided by a force-included
+# compat header rather than by modifying NuttX headers.
+set(NUTTX_COMPAT_FIX "-include ${CMAKE_CURRENT_LIST_DIR}/../nuttx-compat.h")
 
-set(CMAKE_C_FLAGS_INIT "${NUTTX_ARCH_FLAGS} ${NUTTX_ERRNO_FIX} ${NUTTX_COMPAT_FIX} -O1")
-set(CMAKE_CXX_FLAGS_INIT "${NUTTX_ARCH_FLAGS} ${NUTTX_ERRNO_FIX} ${NUTTX_COMPAT_FIX} -O1")
+set(CMAKE_C_FLAGS_INIT "${NUTTX_ARCH_FLAGS} ${NUTTX_COMPAT_FIX} -O1")
+set(CMAKE_CXX_FLAGS_INIT "${NUTTX_ARCH_FLAGS} ${NUTTX_COMPAT_FIX} -O1")
 set(CMAKE_ASM_FLAGS_INIT "${NUTTX_ARCH_FLAGS}")
 
 # NuttX sysroot / include path
@@ -64,8 +57,6 @@ if(DEFINED ENV{NUTTX_INCLUDE_DIR} AND NOT NUTTX_INCLUDE_DIR)
 endif()
 
 if(NUTTX_INCLUDE_DIR)
-  # Override headers must come BEFORE NuttX includes (for errno.h wrapper)
-  include_directories(SYSTEM BEFORE "${CMAKE_CURRENT_LIST_DIR}/../nuttx-include-overrides")
   include_directories(SYSTEM "${NUTTX_INCLUDE_DIR}")
   # Also add the arch-specific includes
   if(EXISTS "${NUTTX_INCLUDE_DIR}/arch")
