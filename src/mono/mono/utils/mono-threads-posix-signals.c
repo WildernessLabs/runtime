@@ -71,7 +71,7 @@ abort_signal_get (void)
 #if defined(HOST_ANDROID)
 	return SIGTTIN;
 #elif defined(HOST_NUTTX)
-	return 22;
+	return SIGRTMIN + 3;
 #elif defined (__OpenBSD__)
 	return SIGUSR1;
 #elif defined (SIGRTMIN)
@@ -92,10 +92,13 @@ suspend_signal_get (void)
 #if defined(HOST_ANDROID)
 	return SIGPWR;
 #elif defined(HOST_NUTTX)
-	/* NuttX legacy firmware supports signals 0-31. Signals 20-30 are unused.
-	 * The Meadow.OS NuttX headers define SIGRTMIN=32 but the actual firmware
-	 * only supports 0-31, so we use fixed signal numbers in the safe range. */
-	return 20;
+	/* NuttX 12 supports signals up to 63 and reserves no real-time signals,
+	 * so use fixed real-time signals: SIGRTMIN + 1 (suspend), + 2 (restart)
+	 * and + 3 (abort).  Fixed numbers keep traces comparable between runs.
+	 * (The NuttX 7 firmware only had signals 0-31, which is why 20, 21 and
+	 * 22 were used before; on NuttX 12 those are SIGTSTP, SIGTTIN and
+	 * SIGTTOU.) */
+	return SIGRTMIN + 1;
 #elif defined (SIGRTMIN)
 	static int suspend_signum = -1;
 	if (suspend_signum == -1)
@@ -116,7 +119,7 @@ restart_signal_get (void)
 #if defined(HOST_ANDROID)
 	return SIGXCPU;
 #elif defined(HOST_NUTTX)
-	return 21;
+	return SIGRTMIN + 2;
 #elif defined (SIGRTMIN)
 	static int restart_signum = -1;
 	if (restart_signum == -1)
@@ -199,7 +202,7 @@ suspend_signal_handler (int _dummy, siginfo_t *info, void *context)
 	 *
 	 * NuttX's up_schedule_sigaction (armv7-m) refuses to deliver a signal
 	 * while another signal handler is already active — no nested signals.
-	 * The restart signal (21) cannot be dispatched while this suspend
+	 * The restart signal cannot be dispatched while this suspend
 	 * handler is running, so sigsuspend() would deadlock.
 	 *
 	 * This path replaces sigsuspend + restart-signal with a kernel
