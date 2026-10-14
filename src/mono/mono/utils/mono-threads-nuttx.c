@@ -20,16 +20,14 @@ mono_threads_platform_get_stack_bounds (guint8 **staddr, size_t *stsize)
 	*staddr = (guint8*)pthread_get_stackaddr_np (pthread_self ());
 	*stsize = pthread_get_stacksize_np (pthread_self ());
 
-	/* NuttX's pthread_get_stackaddr_np returns adj_stack_ptr (initial SP) and
-	 * pthread_get_stacksize_np returns adj_stack_size.  However, up_stack_frame()
-	 * carves a frame off the top of the stack for argument passing BEFORE the
-	 * thread starts, reducing adj_stack_ptr/adj_stack_size.  The actual allocated
-	 * memory extends above adj_stack_ptr by up to ~4KB (argument frame + alignment).
-	 * MONO_CONTEXT_GET_CURRENT captures the real SP which may land in this
-	 * carved-off region, causing is_thread_in_critical_region to think the thread
-	 * is on an alternate stack.  Add a 4KB guard to cover the frame area. */
-	*staddr -= *stsize;
-	*stsize += 4096;
+	/* Since NuttX 10.2.0 (upstream commit 2335b69120a, "arch: Allocate the
+	 * space from the beginning in up_stack_frame"), pthread_get_stackaddr_np
+	 * returns stack_base_ptr, the lowest usable address, and
+	 * pthread_get_stacksize_np the usable size, so the stack is
+	 * [staddr, staddr + stsize) and needs no adjustment.  The same commit moved
+	 * the argument frame to the base of the stack (up_stack_frame() raises
+	 * stack_base_ptr), so it is outside these bounds.  Up to NuttX 10.1 the
+	 * address was adj_stack_ptr, the initial stack pointer at the top. */
 }
 
 guint64
