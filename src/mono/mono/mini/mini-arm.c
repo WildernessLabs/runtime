@@ -3785,7 +3785,7 @@ emit_thunk (guint8 *code, gconstpointer target)
 	arm_ldr_lit ((void **)&code, ARMREG_IP, 4);
 	arm_bxis16 ((void **)&code, ARMREG_IP, 0);
 	arm_nop16 ((void **)&code, OP_NOP16);
-	*(guint32*)code = (guint32)(gsize)target | 1;
+	*(arminstr_t *)code = (guint32)(gsize)target | 1;
 	code += 4;
 #else
 	ARM_LDR_IMM (code, ARMREG_IP, ARMREG_PC, 0);
@@ -3793,7 +3793,7 @@ emit_thunk (guint8 *code, gconstpointer target)
 		ARM_BX (code, ARMREG_IP);
 	else
 		ARM_MOV_REG_REG (code, ARMREG_PC, ARMREG_IP);
-	*(guint32*)code = (guint32)(gsize)target;
+	*(arminstr_t *)code = (guint32)(gsize)target;
 	code += 4;
 #endif
 	mono_arch_flush_icache (p, GPTRDIFF_TO_INT (code - p));
@@ -3826,7 +3826,7 @@ handle_thunk (MonoCompile *cfg, guchar *code, const guchar *target)
 			g_assert_not_reached ();
 		}
 
-		g_assert (*(guint32*)thunks == 0);
+		g_assert (*(arminstr_t *)thunks == 0);
 		emit_thunk (thunks, target);
 		arm_patch (code, thunks);
 
@@ -3851,11 +3851,11 @@ handle_thunk (MonoCompile *cfg, guchar *code, const guchar *target)
 			target_thunk = orig_target;
 		} else {
 			for (p = thunks; p < thunks + thunks_size; p += THUNK_SIZE) {
-				if (((guint32*)p) [0] == 0) {
+				if (((arminstr_t *)p) [0] == 0) {
 					/* Free entry */
 					target_thunk = p;
 					break;
-				} else if ((((guint32*)p) [2] & ~(guint32)1) == ((guint32)(gsize)target & ~(guint32)1)) {
+				} else if ((((arminstr_t *)p) [2] & ~(guint32)1) == ((guint32)(gsize)target & ~(guint32)1)) {
 					/* Thunk already points to target */
 					target_thunk = p;
 					break;
@@ -3895,7 +3895,7 @@ arm_patch_general (MonoCompile *cfg, guchar *code, const guchar *target)
 		}
 	}
 #endif
-	guint32 *code32 = (guint32*)code;
+	arminstr_t *code32 = (arminstr_t *)code;
 	guint32 ins = *code32;
 	guint32 prim = (ins >> 25) & 7;
 	guint32 tval = GPOINTER_TO_UINT (target);
@@ -3966,7 +3966,7 @@ arm_patch_general (MonoCompile *cfg, guchar *code, const guchar *target)
 			guint32 imm12 = hw2 & 0xFFF;
 			/* PC = Align(instruction_address, 4) + 4 */
 			guint8 *pc = (guint8 *)(((gsize)code & ~(gsize)3) + 4);
-			guint32 *literal = (guint32 *)(pc + imm12);
+			arminstr_t *literal = (arminstr_t *)(pc + imm12);
 			*literal = tval;
 			return;
 		}
@@ -5753,9 +5753,9 @@ mono_arch_output_basic_block (MonoCompile *cfg, MonoBasicBlock *bb)
 			if (cfg->compile_aot) {
 				ARM_FLDD (code, ins->dreg, ARMREG_PC, 0);
 				ARM_B (code, 1);
-				*(guint32*)code = ((guint32*)(ins->inst_p0))[0];
+				*(arminstr_t *)code = ((guint32*)(ins->inst_p0))[0];
 				code += 4;
-				*(guint32*)code = ((guint32*)(ins->inst_p0))[1];
+				*(arminstr_t *)code = ((guint32*)(ins->inst_p0))[1];
 				code += 4;
 			} else {
 				/* FIXME: we can optimize the imm load by dealing with part of
@@ -5769,7 +5769,7 @@ mono_arch_output_basic_block (MonoCompile *cfg, MonoBasicBlock *bb)
 			if (cfg->compile_aot) {
 				ARM_FLDS (code, ins->dreg, ARMREG_PC, 0);
 				ARM_B (code, 0);
-				*(guint32*)code = ((guint32*)(ins->inst_p0))[0];
+				*(arminstr_t *)code = ((guint32*)(ins->inst_p0))[0];
 				code += 4;
 			} else {
 				code = mono_arm_emit_load_imm (code, ARMREG_LR, (guint32)(gsize)ins->inst_p0);
@@ -6062,9 +6062,9 @@ mono_arch_output_basic_block (MonoCompile *cfg, MonoBasicBlock *bb)
 				ARM_ABSD (code, vfp_scratch2, ins->sreg1);
 				ARM_FLDD (code, vfp_scratch1, ARMREG_PC, 0);
 				ARM_B (code, 1);
-				*(guint32*)code = 0xffffffff;
+				*(arminstr_t *)code = 0xffffffff;
 				code += 4;
-				*(guint32*)code = 0x7fefffff;
+				*(arminstr_t *)code = 0x7fefffff;
 				code += 4;
 				ARM_CMPD (code, vfp_scratch2, vfp_scratch1);
 				ARM_FMSTAT (code);
@@ -7058,7 +7058,7 @@ mono_arch_emit_exceptions (MonoCompile *cfg)
 			patch_info->ip.i = GPTRDIFF_TO_INT (code - cfg->native_code);
 			ARM_BL (code, 0);
 			cfg->thunk_area += THUNK_SIZE;
-			*(guint32*)(gpointer)code = m_class_get_type_token (exc_class) - MONO_TOKEN_TYPE_DEF;
+			*(arminstr_t *)(gpointer)code = m_class_get_type_token (exc_class) - MONO_TOKEN_TYPE_DEF;
 			code += 4;
 			break;
 		}
@@ -7174,7 +7174,7 @@ mono_arch_build_imt_trampoline (MonoVTable *vtable, MonoIMTCheckItem **imt_entri
 	int size, i;
 	arminstr_t *code, *start;
 	gboolean large_offsets = FALSE;
-	guint32 **constant_pool_starts;
+	arminstr_t **constant_pool_starts;
 	arminstr_t *vtable_target = NULL;
 	int extra_space = 0;
 #ifdef ENABLE_WRONG_METHOD_CHECK
@@ -7184,7 +7184,7 @@ mono_arch_build_imt_trampoline (MonoVTable *vtable, MonoIMTCheckItem **imt_entri
 	MonoMemoryManager *mem_manager = m_class_get_mem_manager (vtable->klass);
 
 	size = BASE_SIZE;
-	constant_pool_starts = g_new0 (guint32*, count);
+	constant_pool_starts = g_new0 (arminstr_t *, count);
 
 	for (i = 0; i < count; ++i) {
 		MonoIMTCheckItem *item = imt_entries [i];

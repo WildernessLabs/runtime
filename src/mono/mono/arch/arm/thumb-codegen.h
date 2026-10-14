@@ -9,8 +9,21 @@ extern "C" {
 
 #define __THUMB_INLINE__ __inline__ // __attribute__((always_inline))
 
-typedef unsigned int arminstr_t;
-typedef unsigned int armword_t;
+/*
+ * Thumb-2 code is only halfword aligned, so a 32-bit instruction or a literal
+ * word in the code buffer may start at an address that is not a multiple of
+ * 4.  Every 32-bit access to the code buffer therefore goes through a type
+ * with 2-byte alignment.  With a 4-byte aligned type the compiler may combine
+ * adjacent accesses into LDRD/STRD or LDM/STM, which fault on a halfword
+ * aligned address even where single LDR/STR accesses are allowed (GCC 15
+ * emitted an STRD in get_throw_trampoline that took a UsageFault).
+ */
+typedef unsigned int __attribute__((aligned(2))) arminstr_t;
+typedef unsigned int __attribute__((aligned(2))) armword_t;
+
+/* For the 32-bit instruction bit-field structures below; the layout is
+ * unchanged, only the alignment is reduced to 2. */
+#define THUMB_INSN32_ALIGN __attribute__((packed, aligned(2)))
 
 typedef enum {
 	ARMREG_R0 = 0,
@@ -900,14 +913,14 @@ typedef struct {
 	uint32_t rd:4;		/* Register d */
 	uint32_t imm3:3;	/* Bits 8-10 of immediate */
 	uint32_t typec:1;	/* '0'b */
-} dpm32_t;
+} THUMB_INSN32_ALIGN dpm32_t;
 
 #define OP_DPM32	0x0000f000
 
 static __THUMB_INLINE__ void
 arm_dpm32(void **code, int rd, int rn, int imm, int cond, int opcode)
 {
-	uint32_t *p = *(uint32_t **) code;
+	arminstr_t *p = *(arminstr_t **) code;
 	dpm32_t *op = *(dpm32_t **) code;
 	*p = OP_DPM32;
 	imm = arm_imm12(imm);
@@ -955,14 +968,14 @@ typedef struct {
 	uint32_t rd:4;		/* Register d */
 	uint32_t imm3:3;	/* Bits 8-10 of immediate */
 	uint32_t typec:1;	/* '0'b */
-} asp32_t;
+} THUMB_INSN32_ALIGN asp32_t;
 
 #define OP_ASP32	0x0000f200
 
 static __THUMB_INLINE__ void
 arm_asp32(void **code, int rd, int rn, int imm, int opcode)
 {
-	uint32_t *p = *(uint32_t **) code;
+	arminstr_t *p = *(arminstr_t **) code;
 	asp32_t *op = *(asp32_t **) code;
 	*p = OP_ASP32;
 	imm = arm_imm12(imm);
@@ -991,14 +1004,14 @@ typedef struct {
 	uint32_t rd:4;		/* Register d */
 	uint32_t imm3:3;	/* Bits 8-10 of immediate */
 	uint32_t typec:1;	/* '0'b */
-} mvp32_t;
+} THUMB_INSN32_ALIGN mvp32_t;
 
 #define OP_MVP32	0x0000f240
 
 static __THUMB_INLINE__ void
 arm_mvp32(void **code, int rd, int imm, int opcode)
 {
-	uint32_t *p = *(uint32_t **) code;
+	arminstr_t *p = *(arminstr_t **) code;
 	mvp32_t *op = *(mvp32_t **) code;
 	*p = OP_MVP32;
 	op->rd = rd;
@@ -1026,14 +1039,14 @@ typedef struct {
 	uint32_t rd:4;		/* Register d */
 	uint32_t imm3:3;	/* Bits 7-10 of immediate */
 	uint32_t typec:1;	/* '0'b */
-} bfo32_t;
+} THUMB_INSN32_ALIGN bfo32_t;
 
 #define OP_BFO32	0x0000f300
 
 static __THUMB_INLINE__ void
 arm_bfo32(void **code, int rd, int imm, int opcode)
 {
-	uint32_t *p = *(uint32_t **) code;
+	arminstr_t *p = *(arminstr_t **) code;
 	bfo32_t *op = *(bfo32_t **) code;
 	*p = OP_BFO32;
 	op->rd = rd;
@@ -1058,14 +1071,14 @@ typedef struct {
 	uint32_t rd:4;		/* Register d */
 	uint32_t imm3:3;	/* Bits 2-4 of immediate */
 	uint32_t sbz:1;		/* '0'b */
-} dpc32_t;
+} THUMB_INSN32_ALIGN dpc32_t;
 
 #define OP_DPC32	0x0000ea00
 
 static __THUMB_INLINE__ void
 arm_dpc32(void **code, int rd, int rn, int rm, int imm, int cond, int opcode, int optype)
 {
-	uint32_t *p = *(uint32_t **) code;
+	arminstr_t *p = *(arminstr_t **) code;
 	dpc32_t *op = *(dpc32_t **) code;
 	*p = OP_DPC32;
 	op->rn = rn;
@@ -1090,14 +1103,14 @@ typedef struct {
 	uint32_t op2:4;		/* Op-code */
 	uint32_t rd:4;		/* Register d */
 	uint32_t typea:4;	/* '1111'b */
-} rcs32_t;
+} THUMB_INSN32_ALIGN rcs32_t;
 
 #define OP_RCS32	0xf000fa00
 
 static __THUMB_INLINE__ void
 arm_rcs32(void **code, int rd, int rn, int rm, int opcode, int op2)
 {
-	uint32_t *p = *(uint32_t **) code;
+	arminstr_t *p = *(arminstr_t **) code;
 	rcs32_t *op = *(rcs32_t **) code;
 	*p = OP_RCS32;
 	op->rn = rn;
@@ -1120,14 +1133,14 @@ typedef struct {
 	uint32_t typea:2;	/* '01'b */
 	uint32_t rd:4;		/* Register d */
 	uint32_t typeb:4;	/* '1111'b */
-} szx32_t;
+} THUMB_INSN32_ALIGN szx32_t;
 
 #define OP_SZX32	0xf080fa00
 			
 static __THUMB_INLINE__ void
 arm_szx32(void **code, int rd, int rn, int rm, int rot, int opcode)
 {
-	uint32_t *p = *(uint32_t **) code;
+	arminstr_t *p = *(arminstr_t **) code;
 	szx32_t *op = *(szx32_t **) code;
 	*p = OP_SZX32;
 	op->rn = rn;
@@ -1150,14 +1163,14 @@ typedef struct {
 	uint32_t typea:1;	/* '0'b */
 	uint32_t rd:4;		/* Register d */
 	uint32_t typeb:4;	/* '1111'b */
-} sim32_t;
+} THUMB_INSN32_ALIGN sim32_t;
 
 #define OP_SIM32	0xf000fa80
 			
 static __THUMB_INLINE__ void
 arm_sim32(void **code, int rd, int rn, int rm, int pfx, int opcode)
 {
-	uint32_t *p = *(uint32_t **) code;
+	arminstr_t *p = *(arminstr_t **) code;
 	sim32_t *op = *(sim32_t **) code;
 	*p = OP_SIM32;
 	op->rn = rn;
@@ -1180,14 +1193,14 @@ typedef struct {
 	uint32_t rn:4;		/* Register n */
 	uint32_t op:2;		/* Op-code */
 	uint32_t type:9;	/* '111110101'b */
-} odp32_t;
+} THUMB_INSN32_ALIGN odp32_t;
 
 #define OP_ODP32	0xf080fa80
 			
 static __THUMB_INLINE__ void
 arm_odp32(void **code, int rd, int rn, int rm, int opcode)
 {
-	uint32_t *p = *(uint32_t **) code;
+	arminstr_t *p = *(arminstr_t **) code;
 	odp32_t *op = *(odp32_t **) code;
 	*p = OP_ODP32;
 	op->rn = rn;
@@ -1210,14 +1223,14 @@ typedef struct {
 	uint32_t typea:2;	/* '00'b */
 	uint32_t rd:4;		/* Register d */
 	uint32_t ra:4; 	 	/* Accumulator register */
-} msa32_t;
+} THUMB_INSN32_ALIGN msa32_t;
 
 #define OP_MSA32	0x0000fb00
 
 static __THUMB_INLINE__ void
 arm_msa32(void **code, int rd, int rn, int rm, int ra, int op1, int op2)
 {
-	uint32_t *p = *(uint32_t **) code;
+	arminstr_t *p = *(arminstr_t **) code;
 	msa32_t *op = *(msa32_t **) code;
 	*p = OP_MSA32;
 	op->rn = rn;
@@ -1240,14 +1253,14 @@ typedef struct {
 	uint32_t op2:4;		/* Op-code part 2 */
 	uint32_t rdhi:4;	/* Register d high */
 	uint32_t rdlo:4;	/* Register d low */
-} mad32_t;
+} THUMB_INSN32_ALIGN mad32_t;
 
 #define OP_MAD32	0x0000fbc0
 		
 static __THUMB_INLINE__ void
 arm_mad32(void **code, int rdhi, int rdlo, int rn, int rm, int op1, int op2)
 {
-	uint32_t *p = *(uint32_t **) code;
+	arminstr_t *p = *(arminstr_t **) code;
 	mad32_t *op = *(mad32_t **) code;
 	*p = OP_MAD32;
 	op->rn = rn;
@@ -1272,14 +1285,14 @@ typedef struct {
 	uint32_t op:4;		/* Op-code */
 	uint32_t coproc:4;	/* Coprocessor */
 	uint32_t rt:4;		/* Register t */
-} crr32_t;
+} THUMB_INSN32_ALIGN crr32_t;
 
 #define OP_CRR32	0x0000ec20
 
 static __THUMB_INLINE__ void
 arm_crr32(void **code, int c, int l, int rt, int rt2, int coproc, int crm, int opcode)
 {
-	uint32_t *p = *(uint32_t **) code;
+	arminstr_t *p = *(arminstr_t **) code;
 	crr32_t *op = *(crr32_t **) code;
 	*p = OP_CRR32;
 	op->crm = crm;
@@ -1308,7 +1321,7 @@ typedef struct {
 	uint32_t imm:8;		/* Immediate value */
 	uint32_t coproc:4;	/* Coprocessor */
 	uint32_t crd:4;		/* Coprocessor Register d */
-} lsc32_t;
+} THUMB_INSN32_ALIGN lsc32_t;
 
 #define OP_LSC32	0x0000ec20
 
@@ -1316,7 +1329,7 @@ static __THUMB_INLINE__ void
 arm_lsc32(void **code, int c, int p, int u, int n, int w, int l, 
 	  int rn, int crd, int coproc, int imm)
 {
-	uint32_t *x = *(uint32_t **) code;
+	arminstr_t *x = *(arminstr_t **) code;
 	lsc32_t *op = *(lsc32_t **) code;
 	*x = OP_LSC32;
 	op->imm = imm;
@@ -1346,14 +1359,14 @@ typedef struct {
 	uint32_t opc2:3;	/* Op-code 2 */
 	uint32_t coproc:4;	/* Coprocessor */
 	uint32_t crd:4;		/* Coprocessor Register d */
-} cdp32_t;
+} THUMB_INSN32_ALIGN cdp32_t;
 
 #define OP_CDP32	0x0000ee00
 
 static __THUMB_INLINE__ void
 arm_cdp32(void **code, int crd, int crn, int crm, int c, int coproc, int opc2, int opc1)
 {
-	uint32_t *p = *(uint32_t **) code;
+	arminstr_t *p = *(arminstr_t **) code;
 	cdp32_t *op = *(cdp32_t **) code;
 	*p = OP_CDP32;
 	op->crm = crm;
@@ -1381,14 +1394,14 @@ typedef struct {
 	uint32_t opc2:3;	/* Op-code 2 */
 	uint32_t coproc:4;	/* Coprocessor */
 	uint32_t rxf:4;		/* RXF */
-} mrt32_t;
+} THUMB_INSN32_ALIGN mrt32_t;
 
 #define OP_MRT32	0x0010ee00
 
 static __THUMB_INLINE__ void
 arm_mrt32(void **code, int c, int l, int crn, int rxf, int crm, int coproc, int opc1, int opc2)
 {
-	uint32_t *p = *(uint32_t **) code;
+	arminstr_t *p = *(arminstr_t **) code;
 	mrt32_t *op = *(mrt32_t **) code;
 	*p = OP_MRT32;
 	op->crm = crm;
@@ -1414,7 +1427,7 @@ typedef struct {
 	uint32_t type:7;	/* '1111100'b */
 	uint32_t imm:12;	/* +/- immediate */
 	uint32_t rt:4;		/* Register t */
-} lspr32_t;
+} THUMB_INSN32_ALIGN lspr32_t;
 
 #define OP_LSPR32	0x0000f800
 #define LDRPC_TEMPLATE	0xc000f8df
@@ -1422,7 +1435,7 @@ typedef struct {
 static __THUMB_INLINE__ void
 arm_lspr32(void **code, int rt, int rn, int ls, int size, int up, int imm, int sign)
 {
-	uint32_t *p = *(uint32_t **) code;
+	arminstr_t *p = *(arminstr_t **) code;
 	lspr32_t *op = *(lspr32_t **) code;
 	*p = OP_LSPR32;
 	op->rt = rt;
@@ -1451,7 +1464,7 @@ typedef struct {
 	uint32_t prep:1;	/* Pre/post selector */
 	uint32_t shift:1;	/* Shift selector */
 	uint32_t rt:4;		/* Register t */
-} lsrn32_t;
+} THUMB_INSN32_ALIGN lsrn32_t;
 
 #define OP_LSRN32	0x0000f800
 
@@ -1459,7 +1472,7 @@ static __THUMB_INLINE__ void
 arm_lsrn32(void **code, int rt, int rn, int ls, int size,
 	   int imm, int sign, int idx, int priv)
 {
-	uint32_t *p = *(uint32_t **) code;
+	arminstr_t *p = *(arminstr_t **) code;
 	lsrn32_t *op = *(lsrn32_t **) code;
 	*p = OP_LSRN32;
 	op->rt = rt;
@@ -1495,14 +1508,14 @@ typedef struct {
 	uint32_t shift:2;	/* Pre/post index */
 	uint32_t typeb:6;	/* '000000'b */
 	uint32_t rt:4;		/* Register t */
-} lsro32_t;
+} THUMB_INSN32_ALIGN lsro32_t;
 
 #define OP_LSRO32	0x0000f800
 
 static __THUMB_INLINE__ void
 arm_lsro32(void **code, int rt, int rn, int rm, int ls, int size, int sign, int shift)
 {
-	uint32_t *p = *(uint32_t **) code;
+	arminstr_t *p = *(arminstr_t **) code;
 	lsro32_t *op = *(lsro32_t **) code;
 	*p = OP_LSRO32;
 	op->rt = rt;
@@ -1529,14 +1542,14 @@ typedef struct {
 	uint32_t imm:8;		/* Immediate */
 	uint32_t rt2d:4;	/* Register t2 or d */
 	uint32_t rt:4;		/* Register t */
-} lsd32_t;
+} THUMB_INSN32_ALIGN lsd32_t;
 
 #define OP_LSD32	0x0000e840
 
 static __THUMB_INLINE__ void
 arm_lsd32(void **code, int rt, int rt2d, int rn, int ls, int up, int prep)
 {
-	uint32_t *p = *(uint32_t **) code;
+	arminstr_t *p = *(arminstr_t **) code;
 	lsd32_t *op = *(lsd32_t **) code;
 	*p = OP_LSD32;
 	op->rt = rt;
@@ -1558,14 +1571,14 @@ typedef struct {
 	uint32_t imm:8;		/* Immediate value */
 	uint32_t rd:4;		/* Register d */
 	uint32_t rt:4;		/* Register t */
-} lsxt32_t;
+} THUMB_INSN32_ALIGN lsxt32_t;
 
 #define OP_LSXT32	0x0000e840
 
 static __THUMB_INLINE__ void
 arm_lsxt32(void **code, int rd, int rt, int rn, int ls, int imm)
 {
-	uint32_t *p = *(uint32_t **) code;
+	arminstr_t *p = *(arminstr_t **) code;
 	lsxt32_t *op = *(lsxt32_t **) code;
 	*p = OP_LSXT32;
 	op->rd = rd;
@@ -1591,14 +1604,14 @@ typedef struct {
 	uint32_t sbz:1;		/* '0'b */
 	uint32_t m:1;		/* Load/Store Register 14 */
 	uint32_t p:1;		/* Load PC */
-} lsm32_t;
+} THUMB_INSN32_ALIGN lsm32_t;
 
 #define OP_LSM32	0x0000e800
 
 static __THUMB_INLINE__ void
 arm_lsm32(void **code, int rn, int mask, int ls, int up, int wb)
 {
-	uint32_t *x = *(uint32_t **) code;
+	arminstr_t *x = *(arminstr_t **) code;
 	lsm32_t *op = *(lsm32_t **) code;
 	*x = OP_LSM32;
 	op->rn = rn;
@@ -1625,7 +1638,7 @@ typedef struct {
 	uint32_t i1:1;		/* Offset bit 19 */
 	uint32_t link:1;	/* With link selector */
 	uint32_t typea:1;	/* '1'b */
-} brl32_t;
+} THUMB_INSN32_ALIGN brl32_t;
 
 #define OP_BRL32	0x9000f000
 #define BL_TEMPLATE	(OP_BRL32 | 0x40000000)
@@ -1634,7 +1647,7 @@ typedef struct {
 static __THUMB_INLINE__ void
 arm_brl32(void **code, int offset, int link)
 {
-	uint32_t *p = *(uint32_t **) code;
+	arminstr_t *p = *(arminstr_t **) code;
 	brl32_t *op = *(brl32_t **) code;
 	offset -= 4;
 	int imm = offset >> 1;
@@ -1663,14 +1676,14 @@ typedef struct {
 	uint32_t i1:1;		/* Offset bit 19 */
 	uint32_t link:1;	/* With link selector */
 	uint32_t typeb:1;	/* '1'b */
-} cbr32_t;
+} THUMB_INSN32_ALIGN cbr32_t;
 
 #define OP_CBR32	0x8000f000
 
 static __THUMB_INLINE__ void
 arm_cbr32(void **code, int cond, int offset)
 {
-	uint32_t *p = *(uint32_t **) code;
+	arminstr_t *p = *(arminstr_t **) code;
 	cbr32_t *op = *(cbr32_t **) code;
 	int imm = (offset - 4) >> 1;
 	*p = OP_CBR32;
@@ -1700,7 +1713,7 @@ typedef struct {
 	uint32_t size:1;	/* Size */
 	uint32_t typeb:3;	/* '101'b */
 	uint32_t opr1:4;	/* Operand 1 */
-} fdp_t;
+} THUMB_INSN32_ALIGN fdp_t;
 
 #define OP_FDP	0x0a00ee00
 
@@ -1712,7 +1725,7 @@ typedef struct {
 static __THUMB_INLINE__ void
 arm_fdp(void **code, int t, int opc1, int opc2, int opc3, int opc4, int opr1, int opr2, int size)
 {
-	uint32_t *p = *(uint32_t **) code;
+	arminstr_t *p = *(arminstr_t **) code;
 	fdp_t *op = *(fdp_t **) code;
 	*p = OP_FDP;
 	op->t = t;
@@ -2042,7 +2055,7 @@ typedef struct {
 	uint32_t size:1;	/* Single/Double selector */
 	uint32_t typee:3;	/* '101'B */
 	uint32_t vd:4;  	/* FP register m */
-} fcvt_t;
+} THUMB_INSN32_ALIGN fcvt_t;
 
 #define OP_VFCVT 	0x0a40eebc
 
@@ -2214,14 +2227,14 @@ typedef struct {
 	uint32_t vrmhi:1;	/* Hi-bit of FP register m */
 	uint32_t typed:6;	/* '101100'b */
 	uint32_t vrt:4;  	/* FP register t */
-} fmovd_t;
+} THUMB_INSN32_ALIGN fmovd_t;
 
 #define OP_FVMOVD 	0x0b10ec40
 
 static __THUMB_INLINE__ void
 arm_fmovd(void **code, int vrt, int vrt2, int vrm, int opr)
 {
-	uint32_t *x = *(uint32_t **) code;
+	arminstr_t *x = *(arminstr_t **) code;
 	fmovd_t *op = *(fmovd_t **) code;
 	*x = OP_FVMOVD;
 	vrm >>= 1;
@@ -2247,14 +2260,14 @@ typedef struct {
 	uint32_t rnlo:1;	/* Lo-bit of [FP|core] register n */
 	uint32_t typeb:4;	/* '1010'b */
 	uint32_t rt:4;		/* [FP|core] Register t */
-} fmovs_t;
+} THUMB_INSN32_ALIGN fmovs_t;
 
 #define OP_FVMOVS 	0x0a10ee00
 
 static __THUMB_INLINE__ void
 arm_fmovs(void **code, int rt, int rn, int opr)
 {
-	uint32_t *x = *(uint32_t **) code;
+	arminstr_t *x = *(arminstr_t **) code;
 	fmovs_t *op = *(fmovs_t **) code;
 	*x = OP_FVMOVS;
 	op->op = opr;
@@ -2282,14 +2295,14 @@ typedef struct {
 	uint32_t size:1;	/* Double/single selector */
 	uint32_t typeb:3;	/* '101'b */
 	uint32_t vrd:4;  	/* FP register d */
-} fpls_t;
+} THUMB_INSN32_ALIGN fpls_t;
 
 #define OP_VFPLD 	0x0a00ed00
 
 static __THUMB_INLINE__ void
 arm_fpls(void **code, int vrd, int rn, int count, int size, int ls, int p, int w)
 {
-	uint32_t *x = *(uint32_t **) code;
+	arminstr_t *x = *(arminstr_t **) code;
 	fpls_t *op = *(fpls_t **) code;
 	*x = OP_VFPLD;
 	op->size = size;
@@ -2324,14 +2337,14 @@ typedef struct {
 	uint32_t type:16;  	/* '1110111011110001'b */
 	uint32_t typea:12;	/* '101000010000'b */
 	uint32_t rt:4;		/* Register t */
-} fvmrs_t;
+} THUMB_INSN32_ALIGN fvmrs_t;
 
 #define OP_FVMRS 	0x0a10eef1
 
 static __THUMB_INLINE__ void
 arm_fvmrs(void **code, int rt)
 {
-	uint32_t *x = *(uint32_t **) code;
+	arminstr_t *x = *(arminstr_t **) code;
 	fvmrs_t *op = *(fvmrs_t **) code;
 	*x = OP_FVMRS;
 	op->rt = rt;
@@ -2347,14 +2360,14 @@ typedef struct {
 	uint32_t type:16;  	/* '1110111011100001'b */
 	uint32_t typea:12;	/* '101000010000'b */
 	uint32_t rt:4;		/* Register t */
-} fvmsr_t;
+} THUMB_INSN32_ALIGN fvmsr_t;
 
 #define OP_FVMSR 	0x0a10eee1
 
 static __THUMB_INLINE__ void
 arm_fvmsr(void **code, int rt)
 {
-	uint32_t *x = *(uint32_t **) code;
+	arminstr_t *x = *(arminstr_t **) code;
 	fvmsr_t *op = *(fvmsr_t **) code;
 	*x = OP_FVMSR;
 	op->rt = rt;
@@ -2374,7 +2387,7 @@ typedef struct {
 	uint32_t size:1;	/* Single/Double selector */
 	uint32_t typeb:3;	/* '101'b */
 	uint32_t vrd:4;  	/* FP register d */
-} fldr_t;
+} THUMB_INSN32_ALIGN fldr_t;
 
 #define OP_FLDR		0x0a00ed10
 
@@ -2382,7 +2395,7 @@ static __THUMB_INLINE__ void
 arm_fldr(void **code, int vrd, int rn, int size, int offset)
 {
 	uintptr_t loc = ((uintptr_t) *code % 4);
-	uint32_t *p = *(uint32_t **) code;
+	arminstr_t *p = *(arminstr_t **) code;
 	fldr_t *op = *(fldr_t **) code;
 	*p = OP_FLDR;
 	
@@ -2423,7 +2436,7 @@ typedef struct {
 	uint32_t size:1;	/* Single/Double selector */
 	uint32_t typeb:3;	/* '101'b */
 	uint32_t vrd:4;  	/* FP register d */
-} fstr_t;
+} THUMB_INSN32_ALIGN fstr_t;
 
 #define OP_FSTR		0x0a00ed00
 
@@ -2431,7 +2444,7 @@ static __THUMB_INLINE__ void
 arm_fstr(void **code, int vrd, int rn, int size, int offset)
 {
 	uintptr_t loc = ((uintptr_t) *code % 4);
-	uint32_t *p = *(uint32_t **) code;
+	arminstr_t *p = *(arminstr_t **) code;
 	fstr_t *op = *(fstr_t **) code;
 	*p = OP_FSTR;
 
@@ -2513,14 +2526,14 @@ typedef struct {
 	uint32_t size:1;	/* Size */
 	uint32_t typea:3;	/* '101'b */
 	uint32_t vrd:4;		/* Register d */
-} fpush_t;
+} THUMB_INSN32_ALIGN fpush_t;
 
 #define OP_FPUSH	0x0a00ed2d
 
 static __THUMB_INLINE__ void
 arm_vpush(void **code, int vrd, int count, int size)
 {
-	uint32_t *p = *(uint32_t **) code;
+	arminstr_t *p = *(arminstr_t **) code;
 	fpush_t *op = *(fpush_t **) code;
 	*p = OP_FPUSH;
 
@@ -2553,14 +2566,14 @@ typedef struct {
 	uint32_t size:1;	/* Size */
 	uint32_t typea:3;	/* '101'b */
 	uint32_t vrd:4;		/* Register d */
-} fpop_t;
+} THUMB_INSN32_ALIGN fpop_t;
 
 #define OP_FPOP		0x0a00ecbd
 
 static __THUMB_INLINE__ void
 arm_vpop(void **code, int vrd, int count, int size)
 {
-	uint32_t *p = *(uint32_t **) code;
+	arminstr_t *p = *(arminstr_t **) code;
 	fpop_t *op = *(fpop_t **) code;
 	*p = OP_FPOP;
 
@@ -2590,14 +2603,14 @@ typedef struct {
 	uint32_t op1:3;		/* Operation part 1 */
 	uint32_t op2:5;		/* Operation part 2 */
 	uint32_t typea:4;	/* Operations specific */
-} hint32_t;
+} THUMB_INSN32_ALIGN hint32_t;
 
 #define OP_NOP32 0x8000f3af
 
 static __THUMB_INLINE__ void
 arm_hint32(void **code, int opr)
 {
-	uint32_t *x = *(uint32_t **) code;
+	arminstr_t *x = *(arminstr_t **) code;
 	hint32_t *op = *(hint32_t **) code;
 	*x = opr;
 	*code = (void *)((uintptr_t) *code + sizeof(*op));
@@ -2612,14 +2625,14 @@ typedef struct {
 	uint32_t option:4;	/* Option */
 	uint32_t op:4;		/* OP - e.g. 5 = DMB */
 	uint32_t typea:8;	/* Operations specific */
-} mci32_t;
+} THUMB_INSN32_ALIGN mci32_t;
 
 #define OP_DMB	0x8f50f3bf
 
 static __THUMB_INLINE__ void
 arm_mci(void **code, int opr, int option)
 {
-	uint32_t *x = *(uint32_t **) code;
+	arminstr_t *x = *(arminstr_t **) code;
 	*x = opr;
 	mci32_t *op = *(mci32_t **) code;
 	op->option = option;
@@ -2642,7 +2655,7 @@ typedef struct {
 static __THUMB_INLINE__ void
 arm_mrs(void **code, int rd, int sr)
 {
-        uint32_t *x = *(uint32_t **) code;
+        arminstr_t *x = *(arminstr_t **) code;
         mrs32_t *op = *(mrs32_t **) code;
         *x = OP_MRS;
         op->sr = sr;
@@ -2667,7 +2680,7 @@ typedef struct {
 static __THUMB_INLINE__ void
 arm_msr(void **code, int rn, int sr, int fm)
 {
-        uint32_t *x = *(uint32_t **) code;
+        arminstr_t *x = *(arminstr_t **) code;
         msr32_t *op = *(msr32_t **) code;
         *x = OP_MSR;
         op->sr = sr;
@@ -2679,7 +2692,7 @@ arm_msr(void **code, int rn, int sr, int fm)
 static __THUMB_INLINE__ void
 arm_msr32(void **code, int sr, int rn)
 {
-	uint32_t *x = *(uint32_t **) code;
+	arminstr_t *x = *(arminstr_t **) code;
 	msr32_t *op = *(msr32_t **) code;
 	*x = OP_MSR;
 	op->sr = sr;
@@ -4341,7 +4354,7 @@ arm_umull(void **code, int rdhi, int rdlo, int rm, int rs)
 	do {						\
 		ARM_LDR_IMM(p, r, ARMREG_PC, 6);	\
 		ARM_BX(p, r);				\
-		*(guint32 *)p = (guint32) addr;		\
+		*(arminstr_t *)p = (guint32) addr;		\
 		p += 4;					\
 	} while (0)
 
@@ -4349,9 +4362,9 @@ arm_umull(void **code, int rdhi, int rdlo, int rm, int rs)
 	do {						\
 		ARM_ADR_IMM(p, r1, 4);			\
 		ARM_LDR_IMM(p, ARMREG_PC, ARMREG_PC, 4);\
-		*(guint32 *)p = (guint32) arg;		\
+		*(arminstr_t *)p = (guint32) arg;		\
 		p += 4;					\
-		*(guint32 *)p = (guint32) addr;		\
+		*(arminstr_t *)p = (guint32) addr;		\
 		p += 4;					\
 	} while (0)
 
@@ -4359,9 +4372,9 @@ arm_umull(void **code, int rdhi, int rdlo, int rm, int rs)
 	do {						\
 		ARM_LDR_IMM(p, r1, ARMREG_PC, 4);	\
 		ARM_LDR_IMM(p, ARMREG_PC, ARMREG_PC, 4);\
-		*(guint32 *)p = (guint32) arg;		\
+		*(arminstr_t *)p = (guint32) arg;		\
 		p += 4;					\
-		*(guint32 *)p = (guint32) addr;		\
+		*(arminstr_t *)p = (guint32) addr;		\
 		p += 4;					\
 	} while (0)
 
@@ -4370,9 +4383,9 @@ arm_umull(void **code, int rdhi, int rdlo, int rm, int rs)
 		ARM_LDR_IMM(p, r1, ARMREG_PC, 2 * sizeof(gpointer));	\
 		ARM_LDR_IMM(p, ARMREG_LR, ARMREG_PC, ARMDISP_LDRPC);	\
 		p = emit_bx(p, r1);					\
-		*(guint32 *)p = (guint32) arg;				\
+		*(arminstr_t *)p = (guint32) arg;				\
 		p += 4;							\
-		*(guint32 *)p = (guint32) addr;				\
+		*(arminstr_t *)p = (guint32) addr;				\
 		p += 4;							\
 	} while (0)
 
