@@ -3360,13 +3360,20 @@ arm_ldm(void **code, int rn, int rl)
 
 #define ARM_LDM(p, rn, rl) arm_ldm((void **)&p, rn, rl)
 
+/*
+ * The 16-bit LDR/STR (immediate) encodings take an unsigned word offset of
+ * 0-124, so a negative offset must use the 32-bit encoding.  Without the
+ * imm >= 0 test, ARM_STR_IMM (code, r1, r7, -4) was emitted as
+ * "str r1, [r7, #124]" (the interp_to_native trampoline then overwrote its
+ * caller's frame).
+ */
 static __THUMB_INLINE__ void
 arm_ldr_imm(void **code, int rn, int rt, int imm)
 {
 	if (rt == ARMREG_PC)
 		arm_ldr_lit(code, rn, imm);
 	else {
-		if ((rn < 8) && (rt < 8) && (imm < 128) && ((imm % 4) == 0)) {
+		if ((rn < 8) && (rt < 8) && (imm >= 0) && (imm < 128) && ((imm % 4) == 0)) {
 			imm >>= 2;
 			arm_lswbi16(code, rn, rt, imm, 1, 0);
 		} else {
@@ -4060,7 +4067,7 @@ arm_stm(void **code, int rn, int rl)
 static __THUMB_INLINE__ void
 arm_str_imm(void **code, int rn, int rt, int imm)
 {
-	if ((rn < 8) && (rt < 8) && (imm < 128) && ((imm % 4) == 0)) {
+	if ((rn < 8) && (rt < 8) && (imm >= 0) && (imm < 128) && ((imm % 4) == 0)) {
 		imm >>= 2;
 		arm_lswbi16(code, rn, rt, imm, 0, 2);
 	} else {
