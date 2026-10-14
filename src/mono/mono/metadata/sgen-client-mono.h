@@ -297,13 +297,13 @@ sgen_client_binary_protocol_concurrent_finish (void)
 }
 
 static void G_GNUC_UNUSED
-sgen_client_binary_protocol_sweep_begin (int generation, int full_sweep)
+sgen_client_binary_protocol_sweep_begin (int generation, gboolean full_sweep)
 {
 	MONO_GC_SWEEP_BEGIN (generation, full_sweep);
 }
 
 static void G_GNUC_UNUSED
-sgen_client_binary_protocol_sweep_end (int generation, int full_sweep)
+sgen_client_binary_protocol_sweep_end (int generation, gboolean full_sweep)
 {
 	MONO_GC_SWEEP_END (generation, full_sweep);
 }

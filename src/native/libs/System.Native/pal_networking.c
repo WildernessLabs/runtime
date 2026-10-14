@@ -162,11 +162,16 @@ enum
     INET6_ADDRSTRLEN_MANAGED = 65 // Managed code has a longer max IPv6 string length
 };
 
+#if !defined(__NuttX__)
+// NuttX numbers the h_errno codes differently (NO_DATA is 2 and TRY_AGAIN is 4), so these
+// equalities do not hold there.  They are only a guard: GetHostErrorCodes values are never
+// returned to managed code (resolver failures go through the EAI_* conversion instead).
 c_static_assert(GetHostErrorCodes_HOST_NOT_FOUND == HOST_NOT_FOUND);
 c_static_assert(GetHostErrorCodes_TRY_AGAIN == TRY_AGAIN);
 c_static_assert(GetHostErrorCodes_NO_RECOVERY == NO_RECOVERY);
 c_static_assert(GetHostErrorCodes_NO_DATA == NO_DATA);
 c_static_assert(GetHostErrorCodes_NO_ADDRESS == NO_ADDRESS);
+#endif
 c_static_assert(sizeof(uint8_t) == sizeof(char)); // We make casts from uint8_t to char so make sure it's legal
 
 // sizeof_member(struct foo, bar) is not valid C++.
@@ -3116,7 +3121,7 @@ int32_t SystemNative_GetBytesAvailable(intptr_t socket, int32_t* available)
     return Error_SUCCESS;
 }
 
-int32_t SystemNative_Select(int* readFds, int readFdsCount, int* writeFds, int writeFdsCount,  int* errorFds, int errorFdsCount, int32_t microseconds, int maxFd, int* triggered)
+int32_t SystemNative_Select(int* readFds, int readFdsCount, int* writeFds, int writeFdsCount,  int* errorFds, int errorFdsCount, int32_t microseconds, int32_t maxFd, int* triggered)
 {
 #ifdef _DARWIN_UNLIMITED_SELECT
     fd_set readSet;

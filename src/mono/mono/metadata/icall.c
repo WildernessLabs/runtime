@@ -3046,7 +3046,7 @@ ves_icall_RuntimeType_FunctionPointerReturnAndParameterTypes (MonoQCallTypeHandl
 }
 
 MonoArrayHandle
-ves_icall_RuntimeType_GetFunctionPointerTypeModifiers (MonoQCallTypeHandle type_handle, int position, MonoBoolean optional, MonoError *error)
+ves_icall_RuntimeType_GetFunctionPointerTypeModifiers (MonoQCallTypeHandle type_handle, gint32 position, MonoBoolean optional, MonoError *error)
 {
 	MonoType *type = type_handle.type;
 	g_assert (type->type == MONO_TYPE_FNPTR);
