@@ -10,6 +10,13 @@
 # Usage:
 #   ./build-nuttx.sh [Release|Debug]
 #
+# Environment:
+#   NUTTX_INCLUDE_DIR  NuttX include/ directory to compile against (required
+#                      unless the sibling ../Meadow checkout exists)
+#   MONO_BUILD_DIR     Build directory (default: build-nuttx-<type> here).
+#                      Set it so that several NuttX checkouts can build this
+#                      runtime without sharing one build directory.
+#
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -18,7 +25,7 @@ MONO_SRC="${SCRIPT_DIR}"
 
 BUILD_TYPE="${1:-Debug}"
 BUILD_TYPE_LOWER="$(echo "${BUILD_TYPE}" | tr '[:upper:]' '[:lower:]')"
-BUILD_DIR="${MONO_SRC}/build-nuttx-${BUILD_TYPE_LOWER}"
+BUILD_DIR="${MONO_BUILD_DIR:-${MONO_SRC}/build-nuttx-${BUILD_TYPE_LOWER}}"
 
 # Default NuttX include path — sibling Meadow.OS repo
 if [ -z "${NUTTX_INCLUDE_DIR:-}" ]; then

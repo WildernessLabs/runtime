@@ -433,3 +433,9 @@ PALEXPORT int32_t SystemNative_Disconnect(intptr_t socket);
 PALEXPORT uint32_t SystemNative_InterfaceNameToIndex(char* interfaceName);
 
 PALEXPORT int32_t SystemNative_Select(int* readFds, int readFdsCount, int* writeFds, int writeFdsCount,  int* errorFds, int errorFdsCount, int32_t microseconds, int32_t maxFd, int* triggered);
+
+#if defined(__NuttX__)
+// Removes a socket from the poll() emulation's registration set.  The Meadow.OS
+// firmware calls it from its close() wrapper, before the real close().
+void nxsock_close_notify(int fd);
+#endif
