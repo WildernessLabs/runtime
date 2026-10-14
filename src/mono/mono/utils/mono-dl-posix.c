@@ -66,9 +66,22 @@ mono_dl_get_so_suffixes (void)
 
 #endif
 
+#ifdef HOST_NUTTX
+/* NuttX's dlopen() does not accept NULL (it dereferences the file name), so
+ * the "main program" handle that mono_dl_open (NULL, ...) asks for is this
+ * sentinel instead.  Symbol lookups through it find nothing, which matches
+ * a statically linked image with no exported dynamic symbol table: P/Invokes
+ * are resolved by the host's PINVOKE_OVERRIDE callback instead. */
+static char nuttx_main_program_handle;
+#endif
+
 void *
 mono_dl_open_file (const char *file, int flags, MonoError *error)
 {
+#ifdef HOST_NUTTX
+	if (file == NULL)
+		return &nuttx_main_program_handle;
+#endif
 #ifdef HOST_ANDROID
 	/* Bionic doesn't support NULL filenames */
 	if (!file)
@@ -103,12 +116,20 @@ mono_dl_open_file (const char *file, int flags, MonoError *error)
 void
 mono_dl_close_handle (MonoDl *module, MonoError *error)
 {
+#ifdef HOST_NUTTX
+	if (module->handle == &nuttx_main_program_handle)
+		return;
+#endif
 	dlclose (module->handle);
 }
 
 void*
 mono_dl_lookup_symbol (MonoDl *module, const char *name)
 {
+#ifdef HOST_NUTTX
+	if (module->handle == &nuttx_main_program_handle)
+		return NULL;
+#endif
 	return dlsym (module->handle, name);
 }
 
