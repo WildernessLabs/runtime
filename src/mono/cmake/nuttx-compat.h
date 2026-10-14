@@ -1,124 +1,65 @@
 /*
- * nuttx-compat.h — Compatibility declarations for legacy NuttX headers.
+ * nuttx-compat.h - Compatibility definitions for building Mono against NuttX.
  *
- * Force-included via -include in the toolchain file. Provides POSIX
- * declarations missing from the older NuttX header set used by the
- * Meadow firmware.
+ * Force-included via -include in the toolchain file.  It holds only what the
+ * NuttX 12 headers used by Meadow.OS still lack, or where the runtime needs a
+ * different value than NuttX provides.  Everything else (realpath, readlink,
+ * lstat, mkdtemp, posix_memalign, the rand48 family, SA_RESTART,
+ * _POSIX_VERSION, ...) comes from the NuttX headers, and the C99 math
+ * functions and macros come from the toolchain's newlib <math.h>.
  */
 
 #ifndef _NUTTX_COMPAT_H
 #define _NUTTX_COMPAT_H
 
-/* Identify this as a NuttX build for #ifdef __NuttX__ guards
- * throughout the Mono runtime (e.g. sgen-stw.c stack bounds fix). */
+/* Identify this as a NuttX build for #ifdef __NuttX__ guards throughout the
+ * Mono runtime (e.g. the sgen-stw.c stack bounds fix).  CMake normally passes
+ * -D__NuttX__ as well. */
 #ifndef __NuttX__
 #define __NuttX__ 1
 #endif
 
-/* POSIX version — not defined in legacy NuttX unistd.h but the RTOS is
- * POSIX-compliant enough for Mono's purposes (pthreads, signals, etc.) */
-#ifndef _POSIX_VERSION
-#define _POSIX_VERSION 200809L
-#endif
-
-/* Integer constant macros — disabled (#if 0) in legacy NuttX stdint.h */
-#ifndef UINT32_C
-#define UINT32_C(x) (x ## U)
-#endif
+/* Integer constant macros.  The NuttX <stdint.h> uses these but does not
+ * define them, so take them from the compiler, which keeps them consistent
+ * with __INT32_TYPE__ and friends (int32_t is 'long int' with
+ * arm-none-eabi GCC). */
 #ifndef INT32_C
-#define INT32_C(x) (x)
+#define INT32_C(x) __INT32_C(x)
 #endif
-#ifndef UINT64_C
-#define UINT64_C(x) (x ## ULL)
+#ifndef UINT32_C
+#define UINT32_C(x) __UINT32_C(x)
 #endif
 #ifndef INT64_C
-#define INT64_C(x) (x ## LL)
+#define INT64_C(x) __INT64_C(x)
+#endif
+#ifndef UINT64_C
+#define UINT64_C(x) __UINT64_C(x)
 #endif
 
-/* Tell dlmalloc.h that mallinfo is already defined (NuttX defines it in
- * stdlib.h, not malloc.h, so dlmalloc's guard __INCLUDE_MALLOC_H misses it) */
+/* Stop dlmalloc.h from including the NuttX <malloc.h>, whose struct
+ * mallinfo conflicts with dlmalloc's own definition.  The guard name is the
+ * one NuttX uses. */
 #define __INCLUDE_MALLOC_H 1
 
-/* NuttX sysconf() doesn't support _SC_PAGE_SIZE (returns -1). Mono's
- * dlmalloc uses sysconf(_SC_PAGE_SIZE) via HAVE_SYSCONF and ABORTs when
- * it gets 0xFFFFFFFF (not a power of 2). Pre-define malloc_getpagesize
- * to bypass the broken sysconf path. NuttX has no MMU pages; 4096 is
- * the standard default. */
+/* Page size for dlmalloc.  Without an MMU, NuttX's sysconf(_SC_PAGESIZE)
+ * returns CONFIG_MM_PGSIZE if set, otherwise CONFIG_PTHREAD_STACK_MIN (256
+ * on Meadow), which is not a sensible allocation granularity.  NuttX has no
+ * MMU pages; use the conventional 4096. */
 #define malloc_getpagesize ((size_t)4096U)
 
-/* Force C99 _Bool for bool instead of NuttX's _Bool8 (uint8_t).
- * Mono code assumes bool is int-sized (C99 _Bool). */
-#define CONFIG_C99_BOOL8 1
-
-/* strcasecmp/strncasecmp — in <strings.h>, not <string.h> on NuttX */
+/* strcasecmp/strncasecmp are declared in <strings.h>, not <string.h>. */
 #include <strings.h>
 
-/* realpath — in <stdlib.h> on modern POSIX, may be missing in legacy NuttX */
-char *realpath(const char *path, char *resolved_path);
-
-/* posix_memalign — POSIX memory allocation, implemented in mono_nuttx_stubs.c */
-int posix_memalign(void **memptr, size_t alignment, size_t size);
-
-/* POSIX functions missing from legacy NuttX headers.
- * Declarations only — implementations in mono_nuttx_stubs.c or not needed. */
-#include <sys/types.h>
-struct stat;
-ssize_t readlink(const char *path, char *buf, size_t bufsize);
-int lstat(const char *path, struct stat *buf);
-char *mkdtemp(char *tmpl);
-
-/* Force HAVE_MKDTEMP so Mono's gfile-unix.c uses mkdtemp() instead of
- * mktemp() (which has wrong return type on legacy NuttX). */
-#define HAVE_MKDTEMP 1
-
-/* _POSIX_HOST_NAME_MAX — not in NuttX limits.h; use HOST_NAME_MAX */
+/* _POSIX_HOST_NAME_MAX is not defined by the NuttX <limits.h>. */
 #ifndef _POSIX_HOST_NAME_MAX
 #define _POSIX_HOST_NAME_MAX 255
 #endif
 
-/* IFF_LOOPBACK, IFF_MULTICAST, IFF_BROADCAST, IFF_ALLMULTI — standard POSIX
- * interface flags missing from NuttX <net/if.h> */
-#ifndef IFF_LOOPBACK
-#define IFF_LOOPBACK   (1 << 4)
-#endif
-#ifndef IFF_BROADCAST
-#define IFF_BROADCAST  (1 << 5)
-#endif
-#ifndef IFF_MULTICAST
-#define IFF_MULTICAST  (1 << 6)
-#endif
+/* NuttX has no IFF_ALLMULTI interface flag.  Define it as 0 so tests such as
+ * (flags & (IFF_MULTICAST | IFF_ALLMULTI)) only see IFF_MULTICAST.  (A
+ * Linux-style value such as (1 << 8) would alias NuttX's IFF_NAT.) */
 #ifndef IFF_ALLMULTI
-#define IFF_ALLMULTI    (1 << 8)
-#endif
-
-/* SA_RESTART — not defined in legacy NuttX signal.h */
-#ifndef SA_RESTART
-#define SA_RESTART 0x10000000
-#endif
-
-/* Math functions and macros missing from legacy NuttX math.h */
-double fmin(double x, double y);
-double fmax(double x, double y);
-float fminf(float x, float y);
-float fmaxf(float x, float y);
-#ifndef isunordered
-#define isunordered(x, y) (__builtin_isunordered((x), (y)))
-#endif
-#ifndef signbit
-#define signbit(x) (__builtin_signbit((x)))
-#endif
-
-/* POSIX rand48 family — not declared in legacy NuttX stdlib.h.
- * Actual implementations provided by mono_nuttx_stubs.c in firmware. */
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-void srand48(long int seedval);
-long int lrand48(void);
-
-#ifdef __cplusplus
-}
+#define IFF_ALLMULTI 0
 #endif
 
 #endif /* _NUTTX_COMPAT_H */

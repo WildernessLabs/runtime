@@ -1918,7 +1918,7 @@ mono_exec_regression_internal (int verbose_level, int count, char *images [], gb
 /**
  * Returns TRUE for success, FALSE for failure.
  */
-gboolean
+int
 mono_regression_test_step (int verbose_level, const char *image, const char *method_name)
 {
 	if (method_name) {
