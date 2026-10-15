@@ -62,4 +62,10 @@
 #define IFF_ALLMULTI 0
 #endif
 
+/* Meadow.OS interface flag: espcp (the ESP32 WiFi coprocessor driver) sets it
+ * on the interface it reports, so that the interface can be identified as
+ * WiFi.  It must match IFF_WIFI in Meadow.OS F7MeadowOS/espcp/espcp_usrsock.h
+ * and uses a bit that NuttX <net/if.h> leaves free. */
+#define MEADOW_IFF_WIFI (1 << 14)
+
 #endif /* _NUTTX_COMPAT_H */

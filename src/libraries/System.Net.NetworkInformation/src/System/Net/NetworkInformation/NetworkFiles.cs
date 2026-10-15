@@ -17,7 +17,10 @@ namespace System.Net.NetworkInformation
         public const string SockstatFile = "/proc/net/sockstat";
         public const string Sockstat6File = "/proc/net/sockstat6";
         public const string SysClassNetFolder = "/sys/class/net";
-        public const string EtcResolvConfFile = "/etc/resolv.conf";
+        // Meadow.OS (NuttX) has no /etc; its DNS client reads the name servers from
+        // /meadow0/dns.conf (CONFIG_NETDB_RESOLVCONF_PATH), which uses the resolv.conf
+        // format and is written by the OS at boot.
+        public const string EtcResolvConfFile = "/meadow0/dns.conf";
         public const string Tcp4ConnectionsFile = "/proc/net/tcp";
         public const string Tcp6ConnectionsFile = "/proc/net/tcp6";
         public const string Udp4ConnectionsFile = "/proc/net/udp";
