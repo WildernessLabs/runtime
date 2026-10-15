@@ -3040,18 +3040,20 @@ arm_asr_imm(void **code, int rd, int rm, int imm)
 
 #define ARM_SAR_IMM(p, rd, rm, imm)	arm_asr_imm((void **)&p, rd, rm, imm)
 
+/*
+ * rd = rn >> rm (arithmetic).  The 16-bit ASRS shifts its destination, so it
+ * can only be used when rd == rn; a shift is not commutative, so rd == rm must
+ * not swap the operands.  Every other case is the 32-bit register-controlled
+ * shift (type ASR).  The data processing (constant shift) encoding used before
+ * computed rn EOR rm.
+ */
 static __THUMB_INLINE__ void
 arm_asr_register(void **code, int rd, int rn, int rm)
 {
-	if ((rd < 8) && (rn < 8) && (rm < 8)) {
-		if (rd == rm) 
-			arm_dpri16(code, rd, rn, 4);
-		else if (rd == rn)
-			arm_dpri16(code, rd, rm, 4);
-		else
-			arm_dpc32(code, rd, rn, rm, 0, 0, 4, 0);
-	} else
-		arm_dpc32(code, rd, rn, rm, 0, 0, 4, 0);
+	if ((rd < 8) && (rn < 8) && (rm < 8) && (rd == rn))
+		arm_dpri16(code, rd, rm, 4);
+	else
+		arm_rcs32(code, rd, rn, rm, 4, 0);
 }
 
 #define ARM_SAR_REG(p, rd, rn, rs)	arm_asr_register((void **)&p, rd, rn, rs)
@@ -3931,18 +3933,18 @@ arm_ror_imm_rot(void **code, int rd, int rn, int imm, int rot, int cond)
 
 #define ARM_ROR_REG_IMM(p, rd, rn, imm, rot)	arm_ror_imm_rot((void **) &p, rd, rm, imm, rot, 0)
 
+/*
+ * rd = rn ROR rm.  As for arm_asr_register: the 16-bit RORS only when
+ * rd == rn, otherwise the 32-bit register-controlled shift (type ROR).  The
+ * data processing (constant shift) encoding used before computed rn ORN rm.
+ */
 static __THUMB_INLINE__ void
 arm_ror_register(void **code, int rd, int rn, int rm)
 {
-	if ((rd < 8) && (rn < 8) && (rm < 8)) {
-		if (rd == rm) 
-			arm_dpri16(code, rd, rn, 7);
-		else if (rd == rn)
-			arm_dpri16(code, rd, rm, 7);
-		else
-			arm_dpc32(code, rd, rn, rm, 0, 0, 6, 0);
-	} else
-		arm_dpc32(code, rd, rn, rm, 0, 0, 6, 0);
+	if ((rd < 8) && (rn < 8) && (rm < 8) && (rd == rn))
+		arm_dpri16(code, rd, rm, 7);
+	else
+		arm_rcs32(code, rd, rn, rm, 6, 0);
 }
 
 #define ARM_ROR_REG_REG(p, rd, rn, rm)	arm_ror_register((void **) &p, rd, rn, rm)
