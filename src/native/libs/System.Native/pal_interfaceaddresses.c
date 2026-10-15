@@ -27,6 +27,7 @@
 #include <net/if.h>
 #elif defined(__NuttX__)
 #include <net/if.h>
+#include <arpa/inet.h>
 #endif
 #include <netinet/in.h>
 #include <string.h>
@@ -716,6 +717,37 @@ int32_t SystemNative_EnumerateGatewayAddressesForInterface(void* context, uint32
     }
 
     free(buffer);
+    return 0;
+}
+#elif defined(__NuttX__)
+// Meadow.OS keeps the gateway of the active network interface in its configuration,
+// set when the network connects (WiFi through the ESP32 coprocessor has no NuttX
+// routing table), and returns it as a dotted string.  The OS answer is passed on as
+// it is, 0.0.0.0 included: over WiFi the OS does not yet learn the DHCP gateway
+// (Meadow.OS issue #703).
+extern int meadow_os_get_gateway_address(char* buffer);
+
+int32_t SystemNative_EnumerateGatewayAddressesForInterface(void* context, uint32_t interfaceIndex, GatewayAddressFound onGatewayFound)
+{
+    char address[INET_ADDRSTRLEN];
+    struct in_addr gateway;
+
+    if (meadow_os_get_gateway_address(address) < 0)
+    {
+        errno = ENOTSUP;
+        return -1;
+    }
+
+    if (inet_pton(AF_INET, address, &gateway) == 1)
+    {
+        IpAddressInfo iai;
+        memset(&iai, 0, sizeof(IpAddressInfo));
+        iai.InterfaceIndex = interfaceIndex;
+        iai.NumAddressBytes = NUM_BYTES_IN_IPV4_ADDRESS;
+        memcpy_s(iai.AddressBytes, sizeof_member(IpAddressInfo, AddressBytes), &gateway.s_addr, sizeof(gateway.s_addr));
+        onGatewayFound(context, &iai);
+    }
+
     return 0;
 }
 #else

@@ -3,6 +3,7 @@
 
 using System.Collections.Generic;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 
 namespace System.Net.NetworkInformation
@@ -67,7 +68,36 @@ namespace System.Net.NetworkInformation
                 StringParsingHelpers.ParseIPv6GatewayAddressesFromRouteFile(collection, systemProperties.IPv6Routes, _linuxNetworkInterface.Name, _linuxNetworkInterface.Index);
             }
 
+            // Meadow.OS (NuttX) has no /proc/net/route; its native layer reports the gateway.
+            if ((systemProperties.IPv4Routes == null) && (systemProperties.IPv6Routes == null))
+            {
+                AddNativeGatewayAddresses(collection, _linuxNetworkInterface.Index);
+            }
+
             return new GatewayIPAddressInformationCollection(collection);
+        }
+
+        private struct GatewayContext
+        {
+            internal List<GatewayIPAddressInformation> _collection;
+        }
+
+        private static unsafe void AddNativeGatewayAddresses(List<GatewayIPAddressInformation> collection, int interfaceIndex)
+        {
+            GatewayContext context;
+            context._collection = collection;
+
+            // A failure leaves the collection as it is: no gateway is known.
+            Interop.Sys.EnumerateGatewayAddressesForInterface(&context, (uint)interfaceIndex, &OnGatewayFound);
+        }
+
+        [UnmanagedCallersOnly]
+        private static unsafe void OnGatewayFound(void* pContext, Interop.Sys.IpAddressInfo* gatewayAddressInfo)
+        {
+            GatewayContext* context = (GatewayContext*)pContext;
+
+            IPAddress ipAddress = new IPAddress(((ReadOnlySpan<byte>)gatewayAddressInfo->AddressBytes)[..gatewayAddressInfo->NumAddressBytes]);
+            context->_collection.Add(new SimpleGatewayIPAddressInformation(ipAddress));
         }
 
         private InternalIPAddressCollection GetDhcpServerAddresses()
