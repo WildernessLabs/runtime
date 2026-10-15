@@ -440,6 +440,28 @@ int32_t SystemNative_GetNetworkInterfaces(int32_t * interfaceCount, NetworkInter
             // OperationalState returns whether the interface can transmit data packets.
             // The administrator must have enabled the interface (IFF_UP), and the cable must be plugged in (IFF_RUNNING).
             nii->OperationalState = ((ifaddrsEntry->ifa_flags & (IFF_UP|IFF_RUNNING)) == (IFF_UP|IFF_RUNNING)) ? OperationalStatus_Up : OperationalStatus_Down;
+
+#if defined(__NuttX__)
+            // NuttX getifaddrs() returns no link-layer (AF_PACKET/AF_LINK) entries.  The
+            // hardware address is in ifa_data (a struct sockaddr from SIOCGIFHWADDR, the
+            // address in sa_data), and Meadow.OS marks its WiFi interface with
+            // MEADOW_IFF_WIFI, so take the type and the address from those.  The NuttX
+            // loopback device does not set IFF_LOOPBACK, so it is recognised by name.
+            if ((strcmp(ifa_name, "lo") == 0) || ((ifaddrsEntry->ifa_flags & IFF_LOOPBACK) != 0))
+            {
+                nii->HardwareType = NetworkInterfaceType_Loopback;
+            }
+            else
+            {
+                nii->HardwareType = ((ifaddrsEntry->ifa_flags & MEADOW_IFF_WIFI) != 0) ? NetworkInterfaceType_Wireless80211 : NetworkInterfaceType_Ethernet;
+            }
+            if (ifaddrsEntry->ifa_data != NULL)
+            {
+                struct sockaddr* hwaddr = (struct sockaddr*)ifaddrsEntry->ifa_data;
+                nii->NumAddressBytes = IFHWADDRLEN;
+                memcpy_s(&nii->AddressBytes, sizeof_member(NetworkInterfaceInfo, AddressBytes), (uint8_t*)hwaddr->sa_data, IFHWADDRLEN);
+            }
+#endif
         }
 
         if (ifaddrsEntry->ifa_addr == NULL)
