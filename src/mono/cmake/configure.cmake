@@ -357,7 +357,9 @@ elseif(HOST_NUTTX)
   set(HAVE_SYSCONF 1)
   set(HAVE_MKSTEMP 1)
   set(HAVE_MKDTEMP 1)
-  set(HAVE_STRERROR_R 0)
+  # NuttX 12 has the POSIX strerror_r (Meadow.OS sets CONFIG_LIBC_STRERROR=y),
+  # so g_strerror gives the error text instead of "Error code 'N'".
+  set(HAVE_STRERROR_R 1)
   set(HAVE_GETRUSAGE 0)
   set(HAVE_POLL_H 1)
   set(HAVE_POLL 1)
