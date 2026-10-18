@@ -349,8 +349,11 @@ elseif(HOST_NUTTX)
   set(HAVE_ERRNO_H 1)
   set(HAVE_PTHREAD_KILL 1)
   set(HAVE_PTHREAD_ATTR_SETSTACKSIZE 1)
-  set(HAVE_PTHREAD_GETNAME_NP 0)
-  set(HAVE_PTHREAD_SETNAME_NP 0)
+  # NuttX 12 has pthread_setname_np/pthread_getname_np (prctl PR_SET_NAME_EXT);
+  # Meadow.OS sets CONFIG_TASK_NAME_SIZE=64, so runtime threads get their names
+  # (Finalizer, .NET TP Worker, ...) in the task list and in crash dumps.
+  set(HAVE_PTHREAD_GETNAME_NP 1)
+  set(HAVE_PTHREAD_SETNAME_NP 1)
   set(HAVE_SYSCONF 1)
   set(HAVE_MKSTEMP 1)
   set(HAVE_MKDTEMP 1)
