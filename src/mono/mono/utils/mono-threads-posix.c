@@ -111,7 +111,7 @@ mono_thread_platform_create_thread (MonoThreadStart thread_fn, gpointer thread_d
 	 * SCHED_RR so same-priority threads get time-sliced. */
 	{
 		struct sched_param sched;
-		sched.sched_priority = 80;
+		sched.sched_priority = MONO_NUTTX_THREAD_PRIORITY_NORMAL;
 		res = pthread_attr_setschedpolicy (&attr, SCHED_RR);
 		if (res != 0)
 			g_warning ("%s: pthread_attr_setschedpolicy SCHED_RR failed, error: \"%s\" (%d)", __func__, g_strerror (res), res);

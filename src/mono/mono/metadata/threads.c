@@ -711,6 +711,14 @@ mono_thread_internal_set_priority (MonoInternalThread *internal, MonoThreadPrior
 	if ((min == -1) || (max == -1))
 		return;
 
+#ifdef HOST_NUTTX
+	/* The scheduler's range is 1 to 255, which would put Normal at 128, above the Mono main
+	 * task and the Meadow.OS system threads, and Highest at 255, above everything.  Spread the
+	 * managed priorities over a band around the Mono main task's priority instead. */
+	min = MONO_NUTTX_THREAD_PRIORITY_LOWEST;
+	max = MONO_NUTTX_THREAD_PRIORITY_HIGHEST;
+#endif
+
 	if (max > 0 && min >= 0 && max > min) {
 		double srange, drange, sposition, dposition;
 		srange = MONO_THREAD_PRIORITY_HIGHEST - MONO_THREAD_PRIORITY_LOWEST;

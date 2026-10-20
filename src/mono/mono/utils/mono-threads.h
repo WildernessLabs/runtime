@@ -23,6 +23,21 @@
 #include <mono/utils/refcount.h>
 #include <mono/utils/mono-error-internals.h>
 #include <mono/utils/w32subset.h>
+
+#ifdef HOST_NUTTX
+/*
+ * NuttX priorities of managed threads.  Managed ThreadPriority values (Lowest to Highest) are
+ * spread evenly over LOWEST to HIGHEST, so Normal is NORMAL.
+ *
+ * NORMAL is the priority of the Mono main task (MONO_TASK_PRIORITY in Meadow.OS,
+ * meadow_thread_config.h), so that SCHED_RR time-slices managed threads with it.  The whole band
+ * is below the Meadow.OS system threads (hcom, the drivers: 100 and above), so that managed
+ * threads cannot starve them.  Keep these in step with meadow_thread_config.h.
+ */
+#define MONO_NUTTX_THREAD_PRIORITY_LOWEST	70
+#define MONO_NUTTX_THREAD_PRIORITY_NORMAL	80
+#define MONO_NUTTX_THREAD_PRIORITY_HIGHEST	90
+#endif
 #include <mono/utils/mono-compiler.h>
 
 #include <glib.h>
