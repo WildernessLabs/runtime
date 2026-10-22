@@ -109,7 +109,15 @@
 // Minimum stack size should be sufficient to allow a typical non-recursive call chain to execute,
 // including potential exception handling and garbage collection. Used for probing for available
 // stack space through RuntimeHelpers.EnsureSufficientExecutionStack.
-#if TARGET_SIZEOF_VOID_P == 8
+#if defined(HOST_NUTTX)
+// Meadow (NuttX): managed threads have 64 KB stacks in all (the Mono task, and the
+// thread pool threads capped in mono-threads-posix.c), so 64 KB free plus the guard
+// can never be met.  RuntimeHelpers.TryEnsureSufficientExecutionStack then always
+// failed, and StackHelper.CallOnEmptyStack (RegexCompiler for RegexOptions.Compiled,
+// among others) moved the work to a new thread pool thread, which did the same until
+// every thread waited on another one.
+#define MONO_MIN_EXECUTION_STACK_SIZE (16 * 1024)
+#elif TARGET_SIZEOF_VOID_P == 8
 #define MONO_MIN_EXECUTION_STACK_SIZE (128 * 1024)
 #else
 #define MONO_MIN_EXECUTION_STACK_SIZE (64 * 1024)
@@ -1130,7 +1138,12 @@ ves_icall_System_Runtime_CompilerServices_RuntimeHelpers_SufficientExecutionStac
 		return TRUE;
 
 	// Stack start limit is stack lower bound. Make sure there is enough room left.
+#if defined(HOST_NUTTX)
+	// NuttX has no guard region: stack_start_limit is the real bottom of the stack.
+	void *limit = ((uint8_t *)thread->stack_start_limit) + MONO_MIN_EXECUTION_STACK_SIZE;
+#else
 	void *limit = ((uint8_t *)thread->stack_start_limit) + ALIGN_TO (MONO_STACK_OVERFLOW_GUARD_SIZE + MONO_MIN_EXECUTION_STACK_SIZE, ((gssize)mono_pagesize ()));
+#endif
 
 	if (current < limit)
 		return FALSE;
