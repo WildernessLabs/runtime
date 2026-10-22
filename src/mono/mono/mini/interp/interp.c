@@ -8275,10 +8275,11 @@ interp_parse_options (const char *options)
 	for (ptr = args; ptr && *ptr; ptr ++) {
 		char *arg = *ptr;
 
+		/* The lists outlive args, which is freed below, so they keep copies of the class names. */
 		if (strncmp (arg, "jit=", 4) == 0) {
-			mono_interp_jit_classes = g_slist_prepend (mono_interp_jit_classes, arg + 4);
+			mono_interp_jit_classes = g_slist_prepend (mono_interp_jit_classes, g_strdup (arg + 4));
 		} else if (strncmp (arg, "interp-only=", strlen ("interp-only=")) == 0) {
-			mono_interp_only_classes = g_slist_prepend (mono_interp_only_classes, arg + strlen ("interp-only="));
+			mono_interp_only_classes = g_slist_prepend (mono_interp_only_classes, g_strdup (arg + strlen ("interp-only=")));
 		} else {
 			gboolean invert;
 			int opt = 0;
