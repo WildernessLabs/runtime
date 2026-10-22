@@ -3179,11 +3179,13 @@ arm_branch_link_x_align(void **code, int rm)
 static __THUMB_INLINE__ void
 arm_branch_long(void **code, int offset)
 {
-	uintptr_t loc = ((uintptr_t) *code % 4);
-
-	if (loc != 0)
-		offset += 2;
-
+	/*
+	 * Every caller skips an unpadded 4-byte literal: LDR.W rd, [pc, #ARMDISP_LDRPC]; B.W 8; .word.
+	 * A branch is relative to the unaligned PC, so the offset needs no adjustment here (unlike
+	 * arm_ldr_lit, whose PC is Align(PC, 4)). Adding 2 when the B.W was at 2 mod 4 landed in the
+	 * second halfword of the next instruction: after a dynamic-method call literal that is
+	 * ORR.W ip, ip, #1, whose second halfword 0x0C01 runs as LSRS r1, r0, #16 and corrupts r1.
+	 */
 	arm_brl32(code, offset, 0);
 }
 
