@@ -47,8 +47,33 @@
  * MMU pages; use the conventional 4096. */
 #define malloc_getpagesize ((size_t)4096U)
 
+/* NuttX 13 <string.h> replaces memset, memcpy, memcmp and friends with
+ * always-inline wrappers (builtin_function() in <nuttx/compiler.h>) whenever
+ * the file is compiled with optimisation.  Mono compiles some functions with
+ * __attribute__((optimize("O0"))) (MONO_NO_OPTIMIZATION, e.g. the
+ * interpreter's do_icall_wrapper), and there GCC turns the wrapper's
+ * __orig_memset branch into a trap (udf): every interpreter icall faulted
+ * with UNDEFINSTR.  Include <nuttx/compiler.h> first and drop
+ * CONFIG_HAVE_BUILTIN so <string.h> never defines the wrappers; GCC still
+ * uses its own builtins in optimised code.  The __has_include guard is for
+ * CMake's compiler checks, which force-include this file without the NuttX
+ * include path (without it CMAKE_SIZEOF_VOID_P comes out empty). */
+#if defined(__has_include)
+#  if __has_include(<nuttx/compiler.h>)
+#    include <nuttx/config.h>
+#    include <nuttx/compiler.h>
+#    undef CONFIG_HAVE_BUILTIN
+#  endif
+#endif
+
 /* strcasecmp/strncasecmp are declared in <strings.h>, not <string.h>. */
 #include <strings.h>
+
+/* NuttX 13 <nuttx/compiler.h> (pulled in by <strings.h>) defines a
+ * function-like memory_barrier() macro, which breaks Mono's
+ * cb_to_mono->memory_barrier () member call.  NuttX itself only uses it
+ * inside kernel-side SMP_MB() macros, so drop it here. */
+#undef memory_barrier
 
 /* _POSIX_HOST_NAME_MAX is not defined by the NuttX <limits.h>. */
 #ifndef _POSIX_HOST_NAME_MAX
